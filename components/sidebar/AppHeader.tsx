@@ -1,4 +1,4 @@
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
@@ -19,10 +19,23 @@ interface HeaderProps {
     role?: 'teacher' | 'student';
     showBack?: boolean;
     onBackPress?: () => void;
+    showPost?: boolean;
+    onPostPress?: () => void;
 }
 
-export default function AppHeader({ title, toggleSidebar, showLive, onLivePress, role, showBack, onBackPress }: HeaderProps) {
+export default function AppHeader({
+    title,
+    toggleSidebar,
+    showLive,
+    onLivePress,
+    role,
+    showBack,
+    onBackPress,
+    showPost,
+    onPostPress
+}: HeaderProps) {
     const router = useRouter();
+    const { colors, isDark } = useTheme();
     const [user, setUser] = useState<{ fullName?: string; photoUrl?: string } | null>(null);
 
     useEffect(() => {
@@ -63,32 +76,32 @@ export default function AppHeader({ title, toggleSidebar, showLive, onLivePress,
     };
 
     return (
-        <View style={styles.header}>
+        <View style={[styles.header, { backgroundColor: colors.headerBg }]}>
             {showBack ? (
                 <TouchableOpacity style={styles.menuIcon} onPress={onBackPress}>
-                    <Ionicons name="arrow-back" size={26} color={Colors.secondary} />
+                    <Ionicons name="arrow-back" size={26} color={colors.text} />
                 </TouchableOpacity>
             ) : (
                 <TouchableOpacity style={styles.menuIcon} onPress={toggleSidebar}>
-                    <Ionicons name="menu-outline" size={26} color={Colors.secondary} />
+                    <Ionicons name="menu-outline" size={26} color={colors.text} />
                 </TouchableOpacity>
             )}
 
             <View style={styles.headerBrand}>
-                <Text style={styles.brandText}>{title}</Text>
+                <Text style={[styles.brandText, { color: colors.text }]}>{title}</Text>
             </View>
 
             <View style={styles.headerRight}>
                 {showLive && (
                     <TouchableOpacity style={styles.actionIcon} onPress={onLivePress}>
-                        <Ionicons name="videocam" size={24} color={Colors.secondary} />
+                        <Ionicons name="videocam" size={24} color={colors.text} />
                     </TouchableOpacity>
                 )}
 
                 <View style={styles.userInfo}>
-                    <Text style={styles.userName}>{getFirstName()}</Text>
+                    <Text style={[styles.userName, { color: colors.text }]}>{getFirstName()}</Text>
                     <TouchableOpacity style={styles.avatarTrigger} onPress={handleProfilePress}>
-                        <View style={styles.avatarBox}>
+                        <View style={[styles.avatarBox, { borderColor: colors.border }]}>
                             <Image
                                 source={getAvatarSource()}
                                 style={styles.avatarImage}
@@ -97,8 +110,14 @@ export default function AppHeader({ title, toggleSidebar, showLive, onLivePress,
                     </TouchableOpacity>
                 </View>
 
+                {showPost && (
+                    <TouchableOpacity style={styles.actionIcon} onPress={onPostPress}>
+                        <Ionicons name="add-circle" size={32} color={colors.primary} />
+                    </TouchableOpacity>
+                )}
+
                 <TouchableOpacity style={styles.actionIcon}>
-                    <Ionicons name="notifications-outline" size={24} color={Colors.secondary} />
+                    <Ionicons name="notifications-outline" size={24} color={colors.text} />
                 </TouchableOpacity>
             </View>
         </View>
@@ -113,7 +132,6 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingTop: 45,
         paddingBottom: 15,
-        backgroundColor: Colors.white,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.05,
@@ -130,7 +148,6 @@ const styles = StyleSheet.create({
     brandText: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: Colors.secondary,
         textAlign: 'center',
     },
     headerRight: {
@@ -146,7 +163,6 @@ const styles = StyleSheet.create({
     userName: {
         fontSize: 14,
         fontWeight: '600',
-        color: Colors.secondary,
     },
     actionIcon: {
         padding: 6,
@@ -158,14 +174,11 @@ const styles = StyleSheet.create({
         width: 36,
         height: 36,
         borderRadius: 18,
-        backgroundColor: Colors.lightGrey,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: '#EEE',
     },
     avatarImage: {
         width: '100%',
         height: '100%',
     },
 });
-

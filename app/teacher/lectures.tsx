@@ -1,6 +1,7 @@
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -29,6 +30,7 @@ interface Lecture {
 
 export default function TeacherLectures() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const { colors, isDark } = useTheme();
     const router = useRouter();
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [lectures, setLectures] = useState<Lecture[]>([
@@ -57,8 +59,8 @@ export default function TeacherLectures() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <AppSidebar role="teacher" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader
                 title="Lectures"
@@ -71,8 +73,8 @@ export default function TeacherLectures() {
                 <View style={styles.screenHeader}>
                     <View style={styles.titleRow}>
                         <View>
-                            <Text style={styles.screenTitle}>Lectures</Text>
-                            <Text style={styles.screenSub}>Manage your class gallery</Text>
+                            <Text style={[styles.screenTitle, { color: colors.text }]}>Lectures</Text>
+                            <Text style={[styles.screenSub, { color: colors.textSecondary }]}>Manage your class gallery</Text>
                         </View>
                         <TouchableOpacity
                             style={styles.addButton}
@@ -88,15 +90,15 @@ export default function TeacherLectures() {
                     data={lectures}
                     keyExtractor={(item) => item.id}
                     renderItem={({ item }) => (
-                        <View style={styles.listItem}>
-                            <View style={styles.iconCircle}>
-                                <Ionicons name="play" size={20} color={Colors.secondary} />
+                        <View style={[styles.listItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={[styles.iconCircle, { backgroundColor: colors.primary + '20' }]}>
+                                <Ionicons name="play" size={20} color={isDark ? colors.text : Colors.secondary} />
                             </View>
                             <View style={styles.listText}>
-                                <Text style={styles.itemName}>{item.title}</Text>
-                                <Text style={styles.itemSub}>{item.type} • {item.duration}</Text>
+                                <Text style={[styles.itemName, { color: colors.text }]}>{item.title}</Text>
+                                <Text style={[styles.itemSub, { color: colors.textSecondary }]}>{item.type} • {item.duration}</Text>
                             </View>
-                            <Ionicons name="ellipsis-vertical" size={20} color={Colors.grey} />
+                            <Ionicons name="ellipsis-vertical" size={20} color={colors.textSecondary} />
                         </View>
                     )}
                     contentContainerStyle={styles.listContent}
@@ -120,9 +122,9 @@ export default function TeacherLectures() {
                         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                         style={styles.modalContainer}
                     >
-                        <View style={styles.modalContent}>
+                        <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <View style={styles.modalHeader}>
-                                <Text style={styles.modalTitle}>Upload Lecture</Text>
+                                <Text style={[styles.modalTitle, { color: colors.text }]}>Upload Lecture</Text>
                                 <TouchableOpacity onPress={() => setIsModalVisible(false)}>
                                     <Ionicons name="close-circle" size={24} color={Colors.grey} />
                                 </TouchableOpacity>
@@ -136,9 +138,9 @@ export default function TeacherLectures() {
                             >
                                 <View style={styles.form}>
                                     <View style={styles.inputGroup}>
-                                        <Text style={styles.label}>Lecture Title</Text>
+                                        <Text style={[styles.label, { color: colors.textSecondary }]}>Lecture Title</Text>
                                         <TextInput
-                                            style={styles.input}
+                                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                             placeholder="e.g. Grammar Session 1"
                                             placeholderTextColor="#AAA"
                                             value={newTitle}
@@ -147,9 +149,9 @@ export default function TeacherLectures() {
                                     </View>
 
                                     <View style={styles.inputGroup}>
-                                        <Text style={styles.label}>Duration (min:sec)</Text>
+                                        <Text style={[styles.label, { color: colors.textSecondary }]}>Duration (min:sec)</Text>
                                         <TextInput
-                                            style={styles.input}
+                                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                             placeholder="e.g. 45:00"
                                             placeholderTextColor="#AAA"
                                             value={newDuration}

@@ -1,13 +1,15 @@
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
 import React, { useRef } from 'react';
 import {
     Animated,
     Dimensions,
+    Modal,
     Pressable,
     ScrollView,
     StyleSheet,
+    Switch,
     Text,
     TouchableOpacity,
     View,
@@ -25,6 +27,7 @@ interface SidebarProps {
 export default function AppSidebar({ role, isSidebarOpen, toggleSidebar }: SidebarProps) {
     const router = useRouter();
     const pathname = usePathname();
+    const { colors, isDark, toggleTheme } = useTheme();
 
     const sidebarAnim = useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
     const overlayOpacity = useRef(new Animated.Value(0)).current;
@@ -56,6 +59,7 @@ export default function AppSidebar({ role, isSidebarOpen, toggleSidebar }: Sideb
         { id: 'lectures', path: '/teacher/lectures', icon: 'play-outline', label: 'Lectures' },
         { id: 'homework', path: '/teacher/homework', icon: 'book-outline', label: 'Homework' },
         { id: 'resources', path: '/teacher/resources', icon: 'language-outline', label: 'IELTS Resources' },
+        { id: 'social', path: '/teacher/social', icon: 'chatbubbles-outline', label: 'Social Feed' },
     ];
 
     const studentMenu = [
@@ -75,70 +79,112 @@ export default function AppSidebar({ role, isSidebarOpen, toggleSidebar }: Sideb
     };
 
     return (
-        <>
-            {isSidebarOpen && (
-                <Pressable style={styles.overlay} onPress={toggleSidebar}>
+        <Modal
+            visible={isSidebarOpen}
+            transparent={true}
+            animationType="none"
+            onRequestClose={toggleSidebar}
+        >
+            <View style={styles.modalContainer}>
+                <Pressable
+                    style={styles.overlay}
+                    onPress={toggleSidebar}
+                >
                     <Animated.View style={[styles.overlayBg, { opacity: overlayOpacity }]} />
                 </Pressable>
-            )}
 
-            <Animated.View style={[styles.sidebar, { transform: [{ translateX: sidebarAnim }] }]}>
-                <View style={styles.sidebarHeader}>
-                    <View style={styles.logoRow}>
-                        <View style={styles.logoBox}>
-                            <Ionicons name="school" size={24} color={Colors.secondary} />
-                        </View>
-                        <View>
-                            <Text style={styles.brandTitle}>Learnova</Text>
-                            <Text style={styles.brandSub}>{role === 'teacher' ? 'Teacher Panel' : 'Student Panel'}</Text>
-                        </View>
-                    </View>
-                    <TouchableOpacity onPress={toggleSidebar}>
-                        <Ionicons name="close-circle" size={32} color={Colors.grey} />
-                    </TouchableOpacity>
-                </View>
-
-                <ScrollView style={styles.menuScroll}>
-                    {menu.map((item) => {
-                        const isActive = pathname === item.path || (item.id === 'index' && pathname === (role === 'teacher' ? '/teacher' : '/student'));
-                        return (
-                            <TouchableOpacity
-                                key={item.id}
-                                style={[styles.menuItem, isActive && styles.activeItem]}
-                                onPress={() => handleNavigate(item.path)}
-                            >
-                                <Ionicons
-                                    name={item.icon as any}
-                                    size={22}
-                                    color={isActive ? Colors.secondary : Colors.grey}
-                                />
-                                <Text style={[styles.menuLabel, isActive && styles.activeLabel]}>
-                                    {item.label}
+                <Animated.View style={[
+                    styles.sidebar,
+                    { transform: [{ translateX: sidebarAnim }], backgroundColor: colors.sidebarBg }
+                ]}>
+                    <View style={styles.sidebarHeader}>
+                        <View style={styles.logoRow}>
+                            <View style={[styles.logoBox, { backgroundColor: colors.primary }]}>
+                                <Ionicons name="school" size={24} color={isDark ? '#FFF' : '#1A1A1A'} />
+                            </View>
+                            <View>
+                                <Text style={[styles.brandTitle, { color: colors.text }]}>Learnova</Text>
+                                <Text style={[styles.brandSub, { color: colors.textSecondary }]}>
+                                    {role === 'teacher' ? 'Teacher Panel' : 'Student Panel'}
                                 </Text>
-                            </TouchableOpacity>
-                        );
-                    })}
-                </ScrollView>
+                            </View>
+                        </View>
+                        <TouchableOpacity onPress={toggleSidebar}>
+                            <Ionicons name="menu-outline" size={32} color={colors.text} />
+                        </TouchableOpacity>
+                    </View>
 
-                <View style={styles.sidebarFooter}>
-                    <TouchableOpacity style={styles.logoutBtn} onPress={() => router.replace('/login')}>
-                        <Ionicons name="log-out" size={20} color="#FF4444" />
-                        <Text style={styles.logoutLabel}>Logout</Text>
-                    </TouchableOpacity>
-                </View>
-            </Animated.View>
-        </>
+                    <ScrollView style={styles.menuScroll} showsVerticalScrollIndicator={false}>
+                        {menu.map((item) => {
+                            const isActive = pathname === item.path || (item.id === 'index' && pathname === (role === 'teacher' ? '/teacher' : '/student'));
+                            return (
+                                <TouchableOpacity
+                                    key={item.id}
+                                    style={[
+                                        styles.menuItem,
+                                        isActive && { backgroundColor: isDark ? colors.primary + '20' : colors.primary }
+                                    ]}
+                                    onPress={() => handleNavigate(item.path)}
+                                >
+                                    <Ionicons
+                                        name={item.icon as any}
+                                        size={22}
+                                        color={isActive ? (isDark ? colors.primary : colors.text) : colors.textSecondary}
+                                    />
+                                    <Text style={[
+                                        styles.menuLabel,
+                                        { color: isActive ? (isDark ? colors.primary : colors.text) : colors.textSecondary },
+                                        isActive && { fontWeight: 'bold' }
+                                    ]}>
+                                        {item.label}
+                                    </Text>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </ScrollView>
+
+                    <View style={[styles.sidebarFooter, { backgroundColor: colors.sidebarBg, borderTopColor: colors.border }]}>
+                        {/* Dark Mode Toggle */}
+                        <View style={[styles.themeToggleRow, { backgroundColor: isDark ? colors.card : '#F5F5F7' }]}>
+                            <View style={styles.themeInfo}>
+                                <Ionicons
+                                    name={isDark ? 'moon' : 'sunny'}
+                                    size={20}
+                                    color={isDark ? '#A78BFA' : '#F59E0B'}
+                                />
+                                <Text style={[styles.themeLabel, { color: colors.text }]}>
+                                    {isDark ? 'Dark Mode' : 'Light Mode'}
+                                </Text>
+                            </View>
+                            <Switch
+                                value={isDark}
+                                onValueChange={toggleTheme}
+                                trackColor={{ false: '#FDE047', true: '#C4B5FD' }}
+                                thumbColor={isDark ? '#7C3AED' : '#F59E0B'}
+                            />
+                        </View>
+
+                        <TouchableOpacity style={styles.logoutBtn} onPress={() => router.replace('/login')}>
+                            <Ionicons name="log-out" size={20} color={colors.danger} />
+                            <Text style={[styles.logoutLabel, { color: colors.danger }]}>Logout</Text>
+                        </TouchableOpacity>
+                    </View>
+                </Animated.View>
+            </View>
+        </Modal>
     );
 }
 
 const styles = StyleSheet.create({
+    modalContainer: {
+        flex: 1,
+    },
     overlay: {
         ...StyleSheet.absoluteFillObject,
-        zIndex: 99,
     },
     overlayBg: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        backgroundColor: 'rgba(0,0,0,0.4)',
     },
     sidebar: {
         position: 'absolute',
@@ -146,9 +192,12 @@ const styles = StyleSheet.create({
         top: 0,
         bottom: 0,
         width: SIDEBAR_WIDTH,
-        backgroundColor: Colors.white,
-        zIndex: 100,
         paddingTop: 50,
+        elevation: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 4, height: 0 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
     },
     sidebarHeader: {
         flexDirection: 'row',
@@ -165,7 +214,6 @@ const styles = StyleSheet.create({
     logoBox: {
         width: 44,
         height: 44,
-        backgroundColor: Colors.primary,
         borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
@@ -173,11 +221,9 @@ const styles = StyleSheet.create({
     brandTitle: {
         fontSize: 20,
         fontWeight: 'bold',
-        color: Colors.secondary,
     },
     brandSub: {
         fontSize: 11,
-        color: Colors.grey,
     },
     menuScroll: {
         flex: 1,
@@ -191,24 +237,32 @@ const styles = StyleSheet.create({
         marginBottom: 5,
         gap: 12,
     },
-    activeItem: {
-        backgroundColor: Colors.primary,
-    },
     menuLabel: {
         fontSize: 16,
         fontWeight: '600',
-        color: Colors.grey,
-    },
-    activeLabel: {
-        color: Colors.secondary,
     },
     sidebarFooter: {
         padding: 20,
         paddingBottom: 40,
         borderTopWidth: 1,
-        borderTopColor: '#EEE',
         gap: 15,
-        backgroundColor: Colors.white,
+    },
+    themeToggleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 15,
+        paddingVertical: 12,
+        borderRadius: 14,
+    },
+    themeInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    themeLabel: {
+        fontSize: 14,
+        fontWeight: '600',
     },
     logoutBtn: {
         flexDirection: 'row',
@@ -218,7 +272,6 @@ const styles = StyleSheet.create({
         padding: 10,
     },
     logoutLabel: {
-        color: '#FF4444',
         fontWeight: 'bold',
     },
 });

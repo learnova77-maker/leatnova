@@ -1,7 +1,8 @@
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, StatusBar, StyleSheet, Text, View } from 'react-native';
 import Animated, {
     Easing,
     useAnimatedStyle,
@@ -11,6 +12,7 @@ import Animated, {
 
 export default function SplashScreen() {
     const router = useRouter();
+    const { colors, isDark } = useTheme();
     const opacity = useSharedValue(0);
     const scale = useSharedValue(0.8);
 
@@ -38,15 +40,16 @@ export default function SplashScreen() {
     });
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <Animated.View style={[styles.logoContainer, animatedStyle]}>
                 <Image
                     source={require('../assets/images/logo.png')}
                     style={styles.logo}
                     resizeMode="contain"
                 />
-                <Text style={styles.appName}>Learnova</Text>
-                <Text style={styles.tagline}>Empowering Your Learning Journey</Text>
+                <Text style={[styles.appName, { color: colors.text }]}>Learnova</Text>
+                <Text style={[styles.tagline, { color: colors.textSecondary }]}>Empowering Your Learning Journey</Text>
             </Animated.View>
         </View>
     );

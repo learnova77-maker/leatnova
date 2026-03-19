@@ -1,6 +1,7 @@
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import React, { useState } from 'react';
 import {
     SafeAreaView,
@@ -12,33 +13,34 @@ import {
 
 export default function StudentProgress() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const { colors, isDark } = useTheme();
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <AppSidebar role="student" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader title="Progress" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
 
             <View style={styles.screenContainer}>
                 <View style={styles.screenHeader}>
-                    <Text style={styles.screenTitle}>My Progress</Text>
-                    <Text style={styles.screenSub}>See how far you've come</Text>
+                    <Text style={[styles.screenTitle, { color: colors.text }]}>My Progress</Text>
+                    <Text style={[styles.screenSub, { color: colors.textSecondary }]}>See how far you've come</Text>
                 </View>
-                <View style={styles.progressCard}>
-                    <Text style={styles.progressTitle}>Overall Completion</Text>
-                    <View style={styles.progressBarBg}>
+                <View style={[styles.progressCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={[styles.progressTitle, { color: colors.text }]}>Overall Completion</Text>
+                    <View style={[styles.progressBarBg, { backgroundColor: colors.inputBg }]}>
                         <View style={[styles.progressBarFill, { width: '68%' }]} />
                     </View>
-                    <Text style={styles.progressPercent}>68% Finished</Text>
+                    <Text style={[styles.progressPercent, { color: colors.textSecondary }]}>68% Finished</Text>
                 </View>
                 <View style={styles.statsGrid}>
-                    <View style={styles.smallStat}>
-                        <Text style={styles.smallStatVal}>24</Text>
-                        <Text style={styles.smallStatLabel}>Videos Watched</Text>
+                    <View style={[styles.smallStat, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <Text style={[styles.smallStatVal, { color: colors.text }]}>24</Text>
+                        <Text style={[styles.smallStatLabel, { color: colors.textSecondary }]}>Videos Watched</Text>
                     </View>
-                    <View style={styles.smallStat}>
-                        <Text style={styles.smallStatVal}>08</Text>
-                        <Text style={styles.smallStatLabel}>Quizzes Passed</Text>
+                    <View style={[styles.smallStat, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <Text style={[styles.smallStatVal, { color: colors.text }]}>08</Text>
+                        <Text style={[styles.smallStatLabel, { color: colors.textSecondary }]}>Quizzes Passed</Text>
                     </View>
                 </View>
             </View>

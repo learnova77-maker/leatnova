@@ -1,8 +1,10 @@
 import { authApi } from '@/constants/api';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
@@ -36,6 +38,7 @@ const SUBJECT_SUGGESTIONS = [
 
 export default function SignUpScreen() {
     const router = useRouter();
+    const { colors, isDark } = useTheme();
 
     // Form State
     const [fullName, setFullName] = useState('');
@@ -159,25 +162,26 @@ export default function SignUpScreen() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar style={isDark ? 'light' : 'dark'} />
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
             >
                 <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={24} color={Colors.secondary} />
+                    <TouchableOpacity style={[styles.backButton, { backgroundColor: colors.inputBg }]} onPress={() => router.back()}>
+                        <Ionicons name="arrow-back" size={24} color={isDark ? colors.text : Colors.secondary} />
                     </TouchableOpacity>
 
                     <View style={styles.header}>
-                        <Text style={styles.title}>Create Account</Text>
-                        <Text style={styles.subtitle}>Join Learnova and share your expertise!</Text>
+                        <Text style={[styles.title, { color: colors.text }]}>Create Account</Text>
+                        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Join Learnova and share your expertise!</Text>
                     </View>
 
                     {/* Profile Photo Placeholder */}
                     <View style={styles.photoSection}>
                         <TouchableOpacity
-                            style={[styles.photoCircle, photoUri && styles.uploadedCircle]}
+                            style={[styles.photoCircle, { backgroundColor: colors.inputBg, borderColor: colors.border }, photoUri && styles.uploadedCircle]}
                             onPress={() => handleImagePick('photo')}
                         >
                             <Ionicons
@@ -194,9 +198,9 @@ export default function SignUpScreen() {
                     <View style={styles.form}>
                         {/* Full Name */}
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Full Name *</Text>
+                            <Text style={[styles.label, { color: colors.text }]}>Full Name *</Text>
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                 placeholder="e.g. Ali Ahmed"
                                 placeholderTextColor="#999"
                                 value={fullName}
@@ -206,9 +210,9 @@ export default function SignUpScreen() {
 
                         {/* Email */}
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Email Address *</Text>
+                            <Text style={[styles.label, { color: colors.text }]}>Email Address *</Text>
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                 placeholder="example@email.com"
                                 keyboardType="email-address"
                                 autoCapitalize="none"
@@ -220,9 +224,9 @@ export default function SignUpScreen() {
 
                         {/* Password */}
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Password *</Text>
+                            <Text style={[styles.label, { color: colors.text }]}>Password *</Text>
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                 placeholder="••••••••"
                                 secureTextEntry
                                 placeholderTextColor="#999"
@@ -233,9 +237,9 @@ export default function SignUpScreen() {
 
                         {/* Expertise / Subject with Suggestions */}
                         <View style={[styles.inputContainer, { zIndex: 1000 }]}>
-                            <Text style={styles.label}>Expertise / Subject Area *</Text>
+                            <Text style={[styles.label, { color: colors.text }]}>Expertise / Subject Area *</Text>
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                 placeholder="e.g. Web Development"
                                 placeholderTextColor="#999"
                                 value={expertise}
@@ -243,14 +247,14 @@ export default function SignUpScreen() {
                                 onFocus={() => expertise.length > 0 && setShowSuggestions(true)}
                             />
                             {showSuggestions && (
-                                <View style={styles.suggestionsList}>
+                                <View style={[styles.suggestionsList, { backgroundColor: colors.card, borderColor: colors.border }]}>
                                     {filteredSuggestions.map((item, index) => (
                                         <TouchableOpacity
                                             key={index}
-                                            style={styles.suggestionItem}
+                                            style={[styles.suggestionItem, { borderBottomColor: colors.border }]}
                                             onPress={() => selectSuggestion(item)}
                                         >
-                                            <Text style={styles.suggestionText}>{item}</Text>
+                                            <Text style={[styles.suggestionText, { color: colors.text }]}>{item}</Text>
                                         </TouchableOpacity>
                                     ))}
                                 </View>
@@ -259,9 +263,9 @@ export default function SignUpScreen() {
 
                         {/* Experience */}
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Experience (Years) *</Text>
+                            <Text style={[styles.label, { color: colors.text }]}>Experience (Years) *</Text>
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                 placeholder="e.g. 5"
                                 keyboardType="number-pad"
                                 placeholderTextColor="#999"
@@ -272,9 +276,9 @@ export default function SignUpScreen() {
 
                         {/* Qualification */}
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Qualification *</Text>
+                            <Text style={[styles.label, { color: colors.text }]}>Qualification *</Text>
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                 placeholder="e.g. Masters in CS"
                                 placeholderTextColor="#999"
                                 value={qualification}
@@ -284,10 +288,11 @@ export default function SignUpScreen() {
 
                         {/* Short Bio */}
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Short Bio (50-200 words) *</Text>
+                            <Text style={[styles.label, { color: colors.text }]}>Short Bio (50-200 words) *</Text>
                             <TextInput
                                 style={[
                                     styles.input,
+                                    { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border },
                                     styles.textArea,
                                     (bio.trim().split(/\s+/).filter(Boolean).length > 200) && { borderColor: '#E74C3C' }
                                 ]}
@@ -315,9 +320,9 @@ export default function SignUpScreen() {
 
                         {/* LinkedIn / Website */}
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>LinkedIn / Website (Optional)</Text>
+                            <Text style={[styles.label, { color: colors.text }]}>LinkedIn / Website (Optional)</Text>
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                 placeholder="https://linkedin.com/in/yourprofile"
                                 placeholderTextColor="#999"
                                 autoCapitalize="none"
@@ -328,9 +333,9 @@ export default function SignUpScreen() {
 
                         {/* ID Verification Placeholder */}
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>ID Verification (Mandatory for Teachers) *</Text>
+                            <Text style={[styles.label, { color: colors.text }]}>ID Verification (Mandatory for Teachers) *</Text>
                             <TouchableOpacity
-                                style={[styles.uploadBox, idCardUri && styles.uploadedBox]}
+                                style={[styles.uploadBox, { backgroundColor: colors.inputBg, borderColor: colors.border }, idCardUri && styles.uploadedBox]}
                                 onPress={() => handleImagePick('id')}
                             >
                                 <Ionicons

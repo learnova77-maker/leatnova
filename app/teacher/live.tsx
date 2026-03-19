@@ -3,6 +3,7 @@ import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { liveApi } from '@/constants/api';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useState } from 'react';
@@ -24,6 +25,7 @@ import {
 
 export default function TeacherLive() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const { colors, isDark } = useTheme();
     const [roomName, setRoomName] = useState('');
     const [isLive, setIsLive] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -35,6 +37,7 @@ export default function TeacherLive() {
         channelName: string;
         uid: number;
         sessionId: string;
+        teacherName: string;
     } | null>(null);
 
     const handleGoLive = async () => {
@@ -76,7 +79,8 @@ export default function TeacherLive() {
                 token,
                 channelName: roomName.trim(),
                 uid,
-                sessionId: sessionRes.data.session.id
+                sessionId: sessionRes.data.session.id,
+                teacherName: user.fullName
             });
             setIsLive(true);
         } catch (err: any) {
@@ -101,6 +105,8 @@ export default function TeacherLive() {
                 channelName={liveData.channelName}
                 token={liveData.token}
                 uid={liveData.uid}
+                sessionId={liveData.sessionId}
+                userName={liveData.teacherName}
                 role="publisher"
                 onEnd={handleEndLive}
             />
@@ -108,8 +114,8 @@ export default function TeacherLive() {
     }
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <AppSidebar role="teacher" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader title="Go Live" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
 
@@ -123,14 +129,15 @@ export default function TeacherLive() {
                         <Text style={styles.promoSub}>Live streaming with high-quality audio and video for up to 1,000 students.</Text>
                     </View>
 
-                    <View style={styles.formCard}>
-                        <Text style={styles.label}>What's the class title?</Text>
+                    <View style={[styles.formCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <Text style={[styles.label, { color: colors.text }]}>What's the class title?</Text>
                         <TextInput
-                            style={styles.input}
+                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                             placeholder="e.g. English Grammar Session 1"
                             value={roomName}
                             onChangeText={setRoomName}
                             editable={!isLoading}
+                            placeholderTextColor="#AAA"
                         />
 
                         <TouchableOpacity
@@ -149,11 +156,11 @@ export default function TeacherLive() {
                         </TouchableOpacity>
                     </View>
 
-                    <View style={styles.tipCard}>
+                    <View style={[styles.tipCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <Ionicons name="people-circle" size={24} color={Colors.primary} />
                         <View style={{ flex: 1 }}>
-                            <Text style={styles.tipTitle}>How Students Join?</Text>
-                            <Text style={styles.tipText}>Students open Learnova App → Live Classes → Your session will appear automatically → They tap "Join Now"</Text>
+                            <Text style={[styles.tipTitle, { color: colors.text }]}>How Students Join?</Text>
+                            <Text style={[styles.tipText, { color: colors.textSecondary }]}>Students open Learnova App → Live Classes → Your session will appear automatically → They tap "Join Now"</Text>
                         </View>
                     </View>
 
@@ -176,8 +183,8 @@ export default function TeacherLive() {
                     )}
 
                     <View style={styles.infoCard}>
-                        <Ionicons name="information-circle" size={20} color={Colors.grey} />
-                        <Text style={styles.infoText}>Students will see your live session and can join instantly from their app.</Text>
+                        <Ionicons name="information-circle" size={20} color={colors.textSecondary} />
+                        <Text style={[styles.infoText, { color: colors.textSecondary }]}>Students will see your live session and can join instantly from their app.</Text>
                     </View>
                 </ScrollView>
             </KeyboardAvoidingView>

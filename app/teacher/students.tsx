@@ -1,6 +1,7 @@
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -30,6 +31,7 @@ interface Student {
 
 export default function TeacherStudents() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const { colors, isDark } = useTheme();
     const router = useRouter();
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [studentList, setStudentList] = useState<Student[]>([
@@ -62,8 +64,8 @@ export default function TeacherStudents() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <AppSidebar role="teacher" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader
                 title="Students"
@@ -76,14 +78,14 @@ export default function TeacherStudents() {
                 <View style={styles.screenHeader}>
                     <View style={styles.titleRow}>
                         <View>
-                            <Text style={styles.screenTitle}>My Students</Text>
-                            <Text style={styles.screenSub}>Manage your active students</Text>
+                            <Text style={[styles.screenTitle, { color: colors.text }]}>My Students</Text>
+                            <Text style={[styles.screenSub, { color: colors.textSecondary }]}>Manage your active students</Text>
                         </View>
                         <TouchableOpacity
                             style={styles.addButton}
                             onPress={() => setIsModalVisible(true)}
                         >
-                            <Ionicons name="add" size={24} color={Colors.secondary} />
+                            <Ionicons name="add" size={24} color={isDark ? colors.text : Colors.secondary} />
                             <Text style={styles.addButtonText}>Add</Text>
                         </TouchableOpacity>
                     </View>
@@ -93,13 +95,13 @@ export default function TeacherStudents() {
                     data={studentList}
                     keyExtractor={(item) => item.id}
                     renderItem={({ item }) => (
-                        <View style={styles.listItem}>
+                        <View style={[styles.listItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <View style={[styles.avatarCircle, { backgroundColor: item.image }]}>
                                 <Text style={styles.avatarInitial}>{item.name.charAt(0)}</Text>
                             </View>
                             <View style={styles.listText}>
-                                <Text style={styles.itemName}>{item.name}</Text>
-                                <Text style={styles.itemSub}>{item.level}</Text>
+                                <Text style={[styles.itemName, { color: colors.text }]}>{item.name}</Text>
+                                <Text style={[styles.itemSub, { color: colors.textSecondary }]}>{item.level}</Text>
                             </View>
                             <View style={styles.progressBox}>
                                 <Text style={styles.progressText}>{item.progress}</Text>
@@ -127,9 +129,9 @@ export default function TeacherStudents() {
                         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                         style={styles.modalContainer}
                     >
-                        <View style={styles.modalContent}>
+                        <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <View style={styles.modalHeader}>
-                                <Text style={styles.modalTitle}>New Student</Text>
+                                <Text style={[styles.modalTitle, { color: colors.text }]}>New Student</Text>
                                 <TouchableOpacity onPress={() => setIsModalVisible(false)}>
                                     <Ionicons name="close-circle" size={24} color={Colors.grey} />
                                 </TouchableOpacity>
@@ -143,9 +145,9 @@ export default function TeacherStudents() {
                             >
                                 <View style={styles.form}>
                                     <View style={styles.inputGroup}>
-                                        <Text style={styles.label}>Full Name</Text>
+                                        <Text style={[styles.label, { color: colors.textSecondary }]}>Full Name</Text>
                                         <TextInput
-                                            style={styles.input}
+                                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                             placeholder="John Doe"
                                             placeholderTextColor="#AAA"
                                             value={newName}
@@ -154,9 +156,9 @@ export default function TeacherStudents() {
                                     </View>
 
                                     <View style={styles.inputGroup}>
-                                        <Text style={styles.label}>Course / Level</Text>
+                                        <Text style={[styles.label, { color: colors.textSecondary }]}>Course / Level</Text>
                                         <TextInput
-                                            style={styles.input}
+                                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                             placeholder="IELTS / HSK / English"
                                             placeholderTextColor="#AAA"
                                             value={newLevel}

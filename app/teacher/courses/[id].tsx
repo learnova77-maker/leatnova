@@ -2,13 +2,16 @@ import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { courseApi } from '@/constants/api';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
     FlatList,
+    Image,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -31,39 +34,60 @@ interface Lecture {
     type: 'Video' | 'Live' | 'PDF';
     isPreviewFree: boolean;
     url?: string;
+    videoUrl?: string; // For uploaded videos
+    scheduledAt?: string;
 }
 
 interface Module {
     id: string;
     title: string;
+    thumbnail?: string; // Added thumbnail
     lectures: Lecture[];
 }
 
 export default function TeacherCourses() {
     const router = useRouter();
+    const { id } = useLocalSearchParams();
+    const { colors, isDark } = useTheme();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [isFetching, setIsFetching] = useState(true);
 
-    // Mock current course ID for this screen
-    const [currentCourseId, setCurrentCourseId] = useState('sample-course-id');
+    // Current course ID from route
+    const currentCourseId = id as string;
 
     // State for Modules
     const [modules, setModules] = useState<Module[]>([]);
 
+    const fetchCurriculum = async () => {
+        setIsFetching(true);
+        try {
+            const response = await courseApi.getCourseDetails(currentCourseId);
+            if (response.data.success && response.data.course.modules) {
+                const modulesData = response.data.course.modules;
+                const formattedModules = Object.keys(modulesData).map(mKey => ({
+                    id: mKey,
+                    title: modulesData[mKey].title,
+                    lectures: modulesData[mKey].lectures
+                        ? Object.keys(modulesData[mKey].lectures).map(lKey => ({
+                            id: lKey,
+                            ...modulesData[mKey].lectures[lKey]
+                        }))
+                        : []
+                }));
+                setModules(formattedModules);
+            }
+        } catch (err) {
+            console.error('Error fetching curriculum:', err);
+        } finally {
+            setIsFetching(false);
+        }
+    };
+
     useEffect(() => {
-        const fetchCurriculum = async () => {
-            // For now we keep the mock or use API if exists
-            setModules([
-                {
-                    id: '1',
-                    title: 'Introduction to Web Dev',
-                    lectures: [
-                        { id: 'l1', title: 'What is HTML?', duration: '10:00', type: 'Video', isPreviewFree: true },
-                    ]
-                }
-            ]);
-        };
-        fetchCurriculum();
+        if (currentCourseId) {
+            fetchCurriculum();
+        }
     }, [currentCourseId]);
 
     // UI state for Modals
@@ -74,13 +98,36 @@ export default function TeacherCourses() {
 
     // Form inputs for Module
     const [moduleTitle, setModuleTitle] = useState('');
+    const [moduleThumbnail, setModuleThumbnail] = useState<string | null>(null);
 
     // Form inputs for Lecture
     const [lectureTitle, setLectureTitle] = useState('');
-    const [lectureUrl, setLectureUrl] = useState('');
+    const [lectureUrl, setLectureUrl] = useState(''); // Text input for link
+    const [lectureVideo, setLectureVideo] = useState<string | null>(null); // For uploaded file
     const [lectureDuration, setLectureDuration] = useState('');
     const [lectureType, setLectureType] = useState<'Video' | 'Live' | 'PDF'>('Video');
+    const [scheduledAt, setScheduledAt] = useState('');
     const [isPreviewFree, setIsPreviewFree] = useState(false);
+
+    // --- Media Picking ---
+    const pickModuleImage = async () => {
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [16, 9],
+            quality: 0.7,
+        });
+        if (!result.canceled) setModuleThumbnail(result.assets[0].uri);
+    };
+
+    const pickLectureVideo = async () => {
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['videos'],
+            allowsEditing: true,
+            quality: 0.7,
+        });
+        if (!result.canceled) setLectureVideo(result.assets[0].uri);
+    };
 
     // --- Module Actions ---
     const handleAddModule = async () => {
@@ -94,13 +141,15 @@ export default function TeacherCourses() {
             } else {
                 const response = await courseApi.addModule({
                     courseId: currentCourseId,
-                    moduleTitle: moduleTitle
+                    moduleTitle: moduleTitle,
+                    thumbnail: moduleThumbnail // Added thumbnail
                 });
 
                 if (response.data.success) {
                     const newMod: Module = {
                         id: response.data.moduleId,
                         title: moduleTitle,
+                        thumbnail: moduleThumbnail || undefined,
                         lectures: [],
                     };
                     setModules([...modules, newMod]);
@@ -117,6 +166,7 @@ export default function TeacherCourses() {
     const openEditModule = (module: Module) => {
         setEditingModule(module);
         setModuleTitle(module.title);
+        setModuleThumbnail(module.thumbnail || null);
         setIsModuleModalVisible(true);
     };
 
@@ -128,6 +178,7 @@ export default function TeacherCourses() {
         setIsModuleModalVisible(false);
         setEditingModule(null);
         setModuleTitle('');
+        setModuleThumbnail(null);
     };
 
     // --- Lecture Actions ---
@@ -143,7 +194,9 @@ export default function TeacherCourses() {
                 duration: lectureDuration || '00:00',
                 type: lectureType,
                 isPreviewFree,
-                url: lectureUrl
+                url: lectureUrl,
+                videoUrl: lectureVideo, // Added uploaded video
+                scheduledAt: lectureType === 'Live' ? scheduledAt : ''
             };
 
             const response = await courseApi.addLecture(lectureData);
@@ -156,6 +209,8 @@ export default function TeacherCourses() {
                     type: lectureType,
                     isPreviewFree: isPreviewFree,
                     url: lectureUrl,
+                    videoUrl: lectureVideo || undefined,
+                    scheduledAt: lectureType === 'Live' ? scheduledAt : ''
                 };
 
                 setModules(modules.map(m =>
@@ -175,14 +230,16 @@ export default function TeacherCourses() {
         setActiveModuleId(null);
         setLectureTitle('');
         setLectureUrl('');
+        setLectureVideo(null);
         setLectureDuration('');
         setLectureType('Video');
+        setScheduledAt('');
         setIsPreviewFree(false);
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <AppSidebar role="teacher" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader
                 title="Manage Course"
@@ -215,7 +272,12 @@ export default function TeacherCourses() {
                     }
                     renderItem={({ item }) => (
                         <View style={styles.moduleCard}>
-                            <View style={styles.moduleHeader}>
+                            <View style={[styles.moduleHeader, { flexDirection: 'row', alignItems: 'center' }]}>
+                                {item.thumbnail && (
+                                    <View style={styles.moduleThumbBoxList}>
+                                        <Image source={{ uri: item.thumbnail }} style={styles.moduleThumbImg} />
+                                    </View>
+                                )}
                                 <View style={{ flex: 1 }}>
                                     <Text style={styles.moduleTitle}>{item.title}</Text>
                                     <Text style={styles.lectureCount}>{item.lectures.length} Lectures</Text>
@@ -287,8 +349,21 @@ export default function TeacherCourses() {
                                     placeholder="e.g. Getting Started"
                                     value={moduleTitle}
                                     onChangeText={setModuleTitle}
-                                    autoFocus
                                 />
+                            </View>
+
+                            <View style={styles.formItem}>
+                                <Text style={styles.label}>Module Thumbnail</Text>
+                                <TouchableOpacity style={styles.imagePickerCompact} onPress={pickModuleImage}>
+                                    {moduleThumbnail ? (
+                                        <Image source={{ uri: moduleThumbnail }} style={styles.previewImage} />
+                                    ) : (
+                                        <View style={styles.imagePlaceholderCompact}>
+                                            <Ionicons name="image-outline" size={24} color={Colors.grey} />
+                                            <Text style={styles.imagePlaceholderTextCompact}>Add Thumbnail</Text>
+                                        </View>
+                                    )}
+                                </TouchableOpacity>
                             </View>
 
                             <TouchableOpacity
@@ -334,14 +409,33 @@ export default function TeacherCourses() {
                                 </View>
 
                                 <View style={styles.formItem}>
-                                    <Text style={styles.label}>Video URL / Path</Text>
+                                    <Text style={styles.label}>Video URL (Optional)</Text>
                                     <TextInput
                                         style={styles.input}
-                                        placeholder="https://..."
+                                        placeholder="https://youtube.com/..."
                                         value={lectureUrl}
                                         onChangeText={setLectureUrl}
                                     />
                                 </View>
+
+                                {lectureType === 'Video' && (
+                                    <View style={styles.formItem}>
+                                        <Text style={styles.label}>Upload Video File</Text>
+                                        <TouchableOpacity style={styles.imagePickerCompact} onPress={pickLectureVideo}>
+                                            {lectureVideo ? (
+                                                <View style={styles.imagePlaceholderCompact}>
+                                                    <Ionicons name="film-outline" size={24} color={Colors.primary} />
+                                                    <Text style={[styles.imagePlaceholderTextCompact, { color: Colors.primary }]}>Video Selected</Text>
+                                                </View>
+                                            ) : (
+                                                <View style={styles.imagePlaceholderCompact}>
+                                                    <Ionicons name="videocam-outline" size={24} color={Colors.grey} />
+                                                    <Text style={styles.imagePlaceholderTextCompact}>Choose Video from Gallery</Text>
+                                                </View>
+                                            )}
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
 
                                 <View style={styles.rowInputs}>
                                     <View style={[styles.formItem, { flex: 1 }]}>
@@ -368,6 +462,18 @@ export default function TeacherCourses() {
                                         </View>
                                     </View>
                                 </View>
+
+                                {lectureType === 'Live' && (
+                                    <View style={styles.formItem}>
+                                        <Text style={styles.label}>Schedule Date & Time</Text>
+                                        <TextInput
+                                            style={styles.input}
+                                            placeholder="e.g. 24th Oct, 5:00 PM"
+                                            value={scheduledAt}
+                                            onChangeText={setScheduledAt}
+                                        />
+                                    </View>
+                                )}
 
                                 <View style={styles.switchRow}>
                                     <View>
@@ -644,5 +750,11 @@ const styles = StyleSheet.create({
         fontSize: 11,
         color: Colors.grey,
         marginTop: 2,
-    }
+    },
+    imagePickerCompact: { width: '100%', height: 120, backgroundColor: '#F9FAFB', borderRadius: 14, borderStyle: 'dashed', borderWidth: 1, borderColor: '#DDD', overflow: 'hidden', marginBottom: 5 },
+    imagePlaceholderCompact: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 5 },
+    imagePlaceholderTextCompact: { color: Colors.grey, fontSize: 13, fontWeight: '500' },
+    previewImage: { width: '100%', height: '100%' },
+    moduleThumbBoxList: { width: 44, height: 44, borderRadius: 10, marginRight: 12, overflow: 'hidden', backgroundColor: '#F5F5F5' },
+    moduleThumbImg: { width: '100%', height: '100%' },
 });

@@ -1,6 +1,7 @@
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -29,6 +30,7 @@ interface Resource {
 
 export default function TeacherResources() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const { colors, isDark } = useTheme();
     const router = useRouter();
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [resources, setResources] = useState<Resource[]>([
@@ -57,8 +59,8 @@ export default function TeacherResources() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <AppSidebar role="teacher" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader
                 title="IELTS Resources"
@@ -71,8 +73,8 @@ export default function TeacherResources() {
                 <View style={styles.screenHeader}>
                     <View style={styles.titleRow}>
                         <View>
-                            <Text style={styles.screenTitle}>IELTS Resources</Text>
-                            <Text style={styles.screenSub}>Share materials with your students</Text>
+                            <Text style={[styles.screenTitle, { color: colors.text }]}>IELTS Resources</Text>
+                            <Text style={[styles.screenSub, { color: colors.textSecondary }]}>Share materials with your students</Text>
                         </View>
                         <TouchableOpacity
                             style={styles.addButton}
@@ -88,15 +90,15 @@ export default function TeacherResources() {
                     data={resources}
                     keyExtractor={(item) => item.id}
                     renderItem={({ item }) => (
-                        <View style={styles.listItem}>
-                            <View style={styles.iconCircle}>
-                                <Ionicons name={item.type === 'File' ? 'document' : 'link'} size={20} color={Colors.secondary} />
+                        <View style={[styles.listItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={[styles.iconCircle, { backgroundColor: colors.primary + '20' }]}>
+                                <Ionicons name={item.type === 'File' ? 'document' : 'link'} size={20} color={isDark ? colors.text : Colors.secondary} />
                             </View>
                             <View style={styles.listText}>
-                                <Text style={styles.itemName}>{item.title}</Text>
-                                <Text style={styles.itemSub}>{item.size}</Text>
+                                <Text style={[styles.itemName, { color: colors.text }]}>{item.title}</Text>
+                                <Text style={[styles.itemSub, { color: colors.textSecondary }]}>{item.size}</Text>
                             </View>
-                            <Ionicons name="download-outline" size={20} color={Colors.secondary} />
+                            <Ionicons name="download-outline" size={20} color={isDark ? colors.text : Colors.secondary} />
                         </View>
                     )}
                     contentContainerStyle={styles.listContent}
@@ -120,9 +122,9 @@ export default function TeacherResources() {
                         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                         style={styles.modalContainer}
                     >
-                        <View style={styles.modalContent}>
+                        <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <View style={styles.modalHeader}>
-                                <Text style={styles.modalTitle}>Add Resource</Text>
+                                <Text style={[styles.modalTitle, { color: colors.text }]}>Add Resource</Text>
                                 <TouchableOpacity onPress={() => setIsModalVisible(false)}>
                                     <Ionicons name="close-circle" size={24} color={Colors.grey} />
                                 </TouchableOpacity>
@@ -136,9 +138,9 @@ export default function TeacherResources() {
                             >
                                 <View style={styles.form}>
                                     <View style={styles.inputGroup}>
-                                        <Text style={styles.label}>Resource Title</Text>
+                                        <Text style={[styles.label, { color: colors.textSecondary }]}>Resource Title</Text>
                                         <TextInput
-                                            style={styles.input}
+                                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                             placeholder="e.g. Vocabulary PDF"
                                             placeholderTextColor="#AAA"
                                             value={newTitle}
@@ -147,9 +149,9 @@ export default function TeacherResources() {
                                     </View>
 
                                     <View style={styles.inputGroup}>
-                                        <Text style={styles.label}>Size / Info</Text>
+                                        <Text style={[styles.label, { color: colors.textSecondary }]}>Size / Info</Text>
                                         <TextInput
-                                            style={styles.input}
+                                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                             placeholder="e.g. 5.5 MB or Link"
                                             placeholderTextColor="#AAA"
                                             value={newSize}

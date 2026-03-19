@@ -1,10 +1,11 @@
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
 import {
     SafeAreaView,
-    StatusBar,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -22,6 +23,7 @@ import Animated, {
 
 export default function ApprovalScreen() {
     const router = useRouter();
+    const { colors, isDark } = useTheme();
 
     // Animation Values
     const scale = useSharedValue(0);
@@ -69,36 +71,36 @@ export default function ApprovalScreen() {
     }));
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar style={isDark ? 'light' : 'dark'} />
 
             <View style={styles.content}>
                 {/* Animated SVG-like Icon Section */}
                 <View style={styles.animationWrapper}>
                     <Animated.View style={[styles.pulseCircle, animatedPulseStyle]} />
-                    <Animated.View style={[styles.iconCircle, animatedIconStyle]}>
+                    <Animated.View style={[styles.iconCircle, { backgroundColor: colors.card, shadowColor: Colors.primary }, animatedIconStyle]}>
                         <Ionicons name="time-outline" size={80} color={Colors.primary} />
                     </Animated.View>
                 </View>
 
                 {/* Text Section */}
                 <Animated.View style={[styles.textWrapper, { opacity }]}>
-                    <Text style={styles.title}>Application Submitted!</Text>
-                    <Text style={styles.subtitle}>
+                    <Text style={[styles.title, { color: colors.text }]}>Application Submitted!</Text>
+                    <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
                         Your instructor profile is currently under review by our team.
                         We will notify you via email once your account is approved.
                     </Text>
                 </Animated.View>
 
                 {/* Info Cards */}
-                <View style={styles.infoContainer}>
+                <View style={[styles.infoContainer, { backgroundColor: colors.inputBg }]}>
                     <View style={styles.infoRow}>
                         <View style={styles.dot} />
-                        <Text style={styles.infoText}>Review takes 24-48 working hours.</Text>
+                        <Text style={[styles.infoText, { color: colors.text }]}>Review takes 24-48 working hours.</Text>
                     </View>
                     <View style={styles.infoRow}>
                         <View style={styles.dot} />
-                        <Text style={styles.infoText}>Check your inbox for Next Steps.</Text>
+                        <Text style={[styles.infoText, { color: colors.text }]}>Check your inbox for Next Steps.</Text>
                     </View>
                 </View>
 

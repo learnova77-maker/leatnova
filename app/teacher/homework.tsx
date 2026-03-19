@@ -1,6 +1,7 @@
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -28,6 +29,7 @@ interface Homework {
 
 export default function TeacherHomework() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const { colors, isDark } = useTheme();
     const router = useRouter();
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [submissions, setSubmissions] = useState<Homework[]>([
@@ -55,8 +57,8 @@ export default function TeacherHomework() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <AppSidebar role="teacher" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader
                 title="Homework"
@@ -69,8 +71,8 @@ export default function TeacherHomework() {
                 <View style={styles.screenHeader}>
                     <View style={styles.titleRow}>
                         <View>
-                            <Text style={styles.screenTitle}>Homework Tasks</Text>
-                            <Text style={styles.screenSub}>Assign tasks to your students</Text>
+                            <Text style={[styles.screenTitle, { color: colors.text }]}>Homework Tasks</Text>
+                            <Text style={[styles.screenSub, { color: colors.textSecondary }]}>Assign tasks to your students</Text>
                         </View>
                         <TouchableOpacity
                             style={styles.addButton}
@@ -86,10 +88,10 @@ export default function TeacherHomework() {
                     data={submissions}
                     keyExtractor={(item) => item.id}
                     renderItem={({ item }) => (
-                        <View style={styles.listItem}>
+                        <View style={[styles.listItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <View style={styles.listText}>
-                                <Text style={styles.itemName}>{item.name}</Text>
-                                <Text style={styles.itemSub}>{item.task}</Text>
+                                <Text style={[styles.itemName, { color: colors.text }]}>{item.name}</Text>
+                                <Text style={[styles.itemSub, { color: colors.textSecondary }]}>{item.task}</Text>
                             </View>
                             <TouchableOpacity style={styles.gradeBtnAction}>
                                 <Text style={styles.gradeText}>Review</Text>
@@ -117,9 +119,9 @@ export default function TeacherHomework() {
                         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                         style={styles.modalContainer}
                     >
-                        <View style={styles.modalContent}>
+                        <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <View style={styles.modalHeader}>
-                                <Text style={styles.modalTitle}>New Homework</Text>
+                                <Text style={[styles.modalTitle, { color: colors.text }]}>New Homework</Text>
                                 <TouchableOpacity onPress={() => setIsModalVisible(false)}>
                                     <Ionicons name="close-circle" size={24} color={Colors.grey} />
                                 </TouchableOpacity>
@@ -133,9 +135,9 @@ export default function TeacherHomework() {
                             >
                                 <View style={styles.form}>
                                     <View style={styles.inputGroup}>
-                                        <Text style={styles.label}>Student Name</Text>
+                                        <Text style={[styles.label, { color: colors.textSecondary }]}>Student Name</Text>
                                         <TextInput
-                                            style={styles.input}
+                                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                             placeholder="Enter student name"
                                             placeholderTextColor="#AAA"
                                             value={newName}
@@ -144,9 +146,9 @@ export default function TeacherHomework() {
                                     </View>
 
                                     <View style={styles.inputGroup}>
-                                        <Text style={styles.label}>Task Description</Text>
+                                        <Text style={[styles.label, { color: colors.textSecondary }]}>Task Description</Text>
                                         <TextInput
-                                            style={styles.input}
+                                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                             placeholder="e.g. Essay Writing Task 2"
                                             placeholderTextColor="#AAA"
                                             value={newTask}

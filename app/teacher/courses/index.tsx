@@ -2,19 +2,23 @@ import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { courseApi } from '@/constants/api';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
     FlatList,
+    Image,
     KeyboardAvoidingView,
     Modal,
     Platform,
     Pressable,
     SafeAreaView,
+    ScrollView,
     StatusBar,
     StyleSheet,
     Text,
@@ -25,6 +29,7 @@ import {
 
 export default function TeacherCourseList() {
     const router = useRouter();
+    const { colors, isDark } = useTheme();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [courses, setCourses] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -34,6 +39,7 @@ export default function TeacherCourseList() {
     const [newCourseTitle, setNewCourseTitle] = useState('');
     const [newCoursePrice, setNewCoursePrice] = useState('');
     const [newCourseCategory, setNewCourseCategory] = useState('');
+    const [thumbnail, setThumbnail] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const loadCourses = async () => {
@@ -58,6 +64,19 @@ export default function TeacherCourseList() {
         loadCourses();
     }, []);
 
+    const pickImage = async () => {
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [16, 9],
+            quality: 0.7,
+        });
+
+        if (!result.canceled) {
+            setThumbnail(result.assets[0].uri);
+        }
+    };
+
     const handleCreateCourse = async () => {
         if (!newCourseTitle.trim()) {
             Alert.alert('Error', 'Please enter a course title.');
@@ -75,7 +94,8 @@ export default function TeacherCourseList() {
                     instructorName: user.fullName,
                     price: newCoursePrice || '0',
                     category: newCourseCategory || 'General',
-                    status: 'active' // For now let's make it active immediately
+                    thumbnail: thumbnail, // Send thumbnail URI
+                    status: 'active'
                 };
 
                 const response = await courseApi.createCourse(courseData);
@@ -84,7 +104,8 @@ export default function TeacherCourseList() {
                     setNewCourseTitle('');
                     setNewCoursePrice('');
                     setNewCourseCategory('');
-                    loadCourses(); // Refresh list
+                    setThumbnail(null);
+                    loadCourses();
                     Alert.alert('Success', 'Course created! Now you can add modules and lectures.');
                 }
             }
@@ -96,8 +117,8 @@ export default function TeacherCourseList() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <AppSidebar role="teacher" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader
                 title="My Courses"
@@ -107,7 +128,7 @@ export default function TeacherCourseList() {
 
             <View style={styles.content}>
                 <View style={styles.header}>
-                    <Text style={styles.title}>All Courses</Text>
+                    <Text style={[styles.title, { color: colors.text }]}>All Courses</Text>
                     <TouchableOpacity
                         style={styles.addBtn}
                         onPress={() => setIsCreateModalVisible(true)}
@@ -129,7 +150,11 @@ export default function TeacherCourseList() {
                                 onPress={() => router.push(`/teacher/courses/${item.id}`)}
                             >
                                 <View style={styles.courseIconBox}>
-                                    <Ionicons name="journal-outline" size={30} color={Colors.primary} />
+                                    {item.thumbnail ? (
+                                        <Image source={{ uri: item.thumbnail }} style={styles.thumbnailImg} />
+                                    ) : (
+                                        <Ionicons name="journal-outline" size={30} color={Colors.primary} />
+                                    )}
                                 </View>
                                 <View style={styles.courseInfo}>
                                     <Text style={styles.courseTitle}>{item.title}</Text>
@@ -154,24 +179,45 @@ export default function TeacherCourseList() {
             </View>
 
             {/* Create Course Modal */}
-            <Modal visible={isCreateModalVisible} animationType="slide" transparent>
+            <Modal visible={isCreateModalVisible} animationType="fade" transparent>
                 <View style={styles.modalOverlay}>
-                    <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsCreateModalVisible(false)} />
-                    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalContainer}>
-                        <View style={styles.modalContent}>
-                            <View style={styles.modalHeader}>
-                                <Text style={styles.modalTitle}>New Course</Text>
-                                <TouchableOpacity onPress={() => setIsCreateModalVisible(false)}>
-                                    <Ionicons name="close" size={24} color={Colors.secondary} />
+                    <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsCreateModalVisible(false)}>
+                        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} />
+                    </Pressable>
+                    <KeyboardAvoidingView
+                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                        style={styles.modalCentered}
+                    >
+                        <View style={styles.modalContentCompact}>
+                            <View style={styles.modalHeaderCompact}>
+                                <Text style={styles.modalTitleCompact}>Create Course</Text>
+                                <TouchableOpacity onPress={() => setIsCreateModalVisible(false)} style={styles.closeBtn}>
+                                    <Ionicons name="close" size={20} color={Colors.secondary} />
                                 </TouchableOpacity>
                             </View>
 
-                            <View style={styles.formContainer}>
+                            <ScrollView
+                                showsVerticalScrollIndicator={false}
+                                contentContainerStyle={styles.formScroll}
+                                keyboardShouldPersistTaps="handled"
+                                style={{ maxHeight: 500 }}
+                            >
+                                <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
+                                    {thumbnail ? (
+                                        <Image source={{ uri: thumbnail }} style={styles.previewImage} />
+                                    ) : (
+                                        <View style={styles.imagePlaceholder}>
+                                            <Ionicons name="image-outline" size={40} color={Colors.grey} />
+                                            <Text style={styles.imagePlaceholderText}>Upload Course Thumbnail</Text>
+                                        </View>
+                                    )}
+                                </TouchableOpacity>
                                 <View style={styles.inputGroup}>
                                     <Text style={styles.label}>Course Title</Text>
                                     <TextInput
-                                        style={styles.input}
+                                        style={styles.inputCompact}
                                         placeholder="e.g. Master English Speaking"
+                                        placeholderTextColor={Colors.grey}
                                         value={newCourseTitle}
                                         onChangeText={setNewCourseTitle}
                                     />
@@ -180,18 +226,20 @@ export default function TeacherCourseList() {
                                 <View style={styles.inputGroup}>
                                     <Text style={styles.label}>Category</Text>
                                     <TextInput
-                                        style={styles.input}
-                                        placeholder="e.g. Language, Coding..."
+                                        style={styles.inputCompact}
+                                        placeholder="e.g. Language, Art..."
+                                        placeholderTextColor={Colors.grey}
                                         value={newCourseCategory}
                                         onChangeText={setNewCourseCategory}
                                     />
                                 </View>
 
                                 <View style={styles.inputGroup}>
-                                    <Text style={styles.label}>Price ($) (Leave 0 for free)</Text>
+                                    <Text style={styles.label}>Price ($)</Text>
                                     <TextInput
-                                        style={styles.input}
-                                        placeholder="0"
+                                        style={styles.inputCompact}
+                                        placeholder="0 for free"
+                                        placeholderTextColor={Colors.grey}
                                         keyboardType="numeric"
                                         value={newCoursePrice}
                                         onChangeText={setNewCoursePrice}
@@ -199,17 +247,17 @@ export default function TeacherCourseList() {
                                 </View>
 
                                 <TouchableOpacity
-                                    style={[styles.submitBtn, isSubmitting && { opacity: 0.7 }]}
+                                    style={[styles.submitBtnCompact, isSubmitting && { opacity: 0.7 }]}
                                     onPress={handleCreateCourse}
                                     disabled={isSubmitting}
                                 >
                                     {isSubmitting ? (
-                                        <ActivityIndicator color="#FFF" />
+                                        <ActivityIndicator color={Colors.secondary} />
                                     ) : (
-                                        <Text style={styles.submitBtnText}>Create Course</Text>
+                                        <Text style={styles.submitBtnTextCompact}>Launch Course</Text>
                                     )}
                                 </TouchableOpacity>
-                            </View>
+                            </ScrollView>
                         </View>
                     </KeyboardAvoidingView>
                 </View>
@@ -236,15 +284,21 @@ const styles = StyleSheet.create({
     emptyText: { color: Colors.grey, fontSize: 16, textAlign: 'center' },
 
     // Modal
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-    modalContainer: { backgroundColor: '#FFF', borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingBottom: 40 },
-    modalContent: { padding: 24 },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25, paddingHorizontal: 24, paddingTop: 24 },
-    modalTitle: { fontSize: 20, fontWeight: 'bold', color: Colors.secondary },
-    formContainer: { gap: 20, paddingHorizontal: 24 },
+    modalOverlay: { flex: 1, backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center' },
+    modalCentered: { width: '85%', maxWidth: 400, justifyContent: 'center' },
+    modalContentCompact: { backgroundColor: '#FFF', borderRadius: 24, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 10 },
+    modalHeaderCompact: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingHorizontal: 5 },
+    modalTitleCompact: { fontSize: 18, fontWeight: 'bold', color: Colors.secondary },
+    closeBtn: { padding: 5 },
+    formScroll: { gap: 15 },
     inputGroup: { gap: 8 },
-    label: { fontSize: 14, fontWeight: '600', color: Colors.secondary },
-    input: { backgroundColor: '#F9FAFB', borderRadius: 12, padding: 15, fontSize: 16, borderWidth: 1, borderColor: '#EEE' },
-    submitBtn: { backgroundColor: Colors.secondary, padding: 18, borderRadius: 16, alignItems: 'center', marginTop: 10 },
-    submitBtnText: { color: '#FFF', fontSize: 18, fontWeight: 'bold' }
+    label: { fontSize: 13, fontWeight: '600', color: Colors.secondary, marginLeft: 2 },
+    inputCompact: { backgroundColor: '#F9FAFB', borderRadius: 12, padding: 12, fontSize: 15, borderWidth: 1, borderColor: '#EEE', color: Colors.secondary },
+    submitBtnCompact: { backgroundColor: Colors.primary, padding: 16, borderRadius: 14, alignItems: 'center', marginTop: 10 },
+    submitBtnTextCompact: { color: Colors.secondary, fontSize: 16, fontWeight: 'bold' },
+    imagePicker: { width: '100%', height: 180, backgroundColor: '#F9FAFB', borderRadius: 16, borderStyle: 'dashed', borderWidth: 2, borderColor: '#EEE', overflow: 'hidden', marginBottom: 20 },
+    imagePlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 10 },
+    imagePlaceholderText: { color: Colors.grey, fontSize: 14, fontWeight: '500' },
+    previewImage: { width: '100%', height: '100%' },
+    thumbnailImg: { width: '100%', height: '100%', borderRadius: 12 },
 });

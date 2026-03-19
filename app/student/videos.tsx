@@ -1,6 +1,7 @@
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
@@ -15,6 +16,7 @@ import {
 
 export default function StudentVideos() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const { colors, isDark } = useTheme();
 
     const videos = [
         { id: '1', title: 'IELTS Speaking Basics', duration: '12:45', instructor: 'Prof. Wei Chen' },
@@ -23,27 +25,27 @@ export default function StudentVideos() {
     ];
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <AppSidebar role="student" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader title="Video Library" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
 
             <View style={styles.screenContainer}>
                 <View style={styles.screenHeader}>
-                    <Text style={styles.screenTitle}>Video Library</Text>
-                    <Text style={styles.screenSub}>Learn at your own pace</Text>
+                    <Text style={[styles.screenTitle, { color: colors.text }]}>Video Library</Text>
+                    <Text style={[styles.screenSub, { color: colors.textSecondary }]}>Learn at your own pace</Text>
                 </View>
                 <FlatList
                     data={videos}
                     keyExtractor={(item) => item.id}
                     renderItem={({ item }) => (
-                        <TouchableOpacity style={styles.listItem}>
+                        <TouchableOpacity style={[styles.listItem, { backgroundColor: colors.card }]}>
                             <View style={styles.videoIcon}>
                                 <Ionicons name="play" size={20} color={Colors.secondary} />
                             </View>
                             <View style={styles.listText}>
-                                <Text style={styles.itemName}>{item.title}</Text>
-                                <Text style={styles.itemSub}>{item.instructor} • {item.duration}</Text>
+                                <Text style={[styles.itemName, { color: colors.text }]}>{item.title}</Text>
+                                <Text style={[styles.itemSub, { color: colors.textSecondary }]}>{item.instructor} • {item.duration}</Text>
                             </View>
                             <Ionicons name="cloud-download-outline" size={20} color={Colors.grey} />
                         </TouchableOpacity>

@@ -29,6 +29,73 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Get teacher-specific dashboard data
+router.get('/teacher/:instructorId', async (req, res) => {
+    const { instructorId } = req.params;
+    try {
+        const dbRef = ref(rtdb);
+        const snapshot = await get(child(dbRef, 'courses'));
+
+        let teacherCourses = [];
+        if (snapshot.exists()) {
+            const allCourses = snapshot.val();
+            teacherCourses = Object.keys(allCourses)
+                .map(key => ({ id: key, ...allCourses[key] }))
+                .filter(course => course.instructorId === instructorId);
+        }
+
+        // Calculate Stats
+        const stats = {
+            totalCourses: teacherCourses.length,
+            totalStudents: 0, // Will implement enrollment logic later
+            totalHours: 0     // Will calculate from lectures later
+        };
+
+        res.json({
+            success: true,
+            courses: teacherCourses,
+            stats
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Get course details via POST (Vercel-friendly fallback for tricky IDs)
+router.post('/details', async (req, res) => {
+    const { courseId } = req.body;
+    if (!courseId) {
+        return res.status(400).json({ success: false, message: 'courseId is required in body' });
+    }
+    try {
+        const dbRef = ref(rtdb);
+        const snapshot = await get(child(dbRef, `courses/${courseId}`));
+        if (snapshot.exists()) {
+            res.json({ success: true, course: { id: courseId, ...snapshot.val() } });
+        } else {
+            res.status(404).json({ success: false, message: 'Course not found' });
+        }
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Get course details (student/teacher) - path param version
+router.get('/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const dbRef = ref(rtdb);
+        const snapshot = await get(child(dbRef, `courses/${id}`));
+        if (snapshot.exists()) {
+            res.json({ success: true, course: { id, ...snapshot.val() } });
+        } else {
+            res.status(404).json({ success: false, message: 'Course not found' });
+        }
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // Create course (teacher)
 router.post('/create', async (req, res) => {
     const { title, instructorId, ...extraInfo } = req.body;
@@ -66,7 +133,7 @@ router.post('/module/add', async (req, res) => {
 
 // Add lecture (teacher)
 router.post('/lecture/add', async (req, res) => {
-    const { courseId, moduleId, lectureTitle, duration, type, isPreviewFree, url } = req.body;
+    const { courseId, moduleId, lectureTitle, duration, type, isPreviewFree, url, scheduledAt } = req.body;
     try {
         const lecturesRef = ref(rtdb, `courses/${courseId}/modules/${moduleId}/lectures`);
         const newLectureRef = push(lecturesRef);
@@ -76,43 +143,12 @@ router.post('/lecture/add', async (req, res) => {
             type,
             isPreviewFree,
             url,
+            scheduledAt: scheduledAt || null,
             createdAt: Date.now(),
         });
         res.status(201).json({ success: true, lectureId: newLectureRef.key });
     } catch (err) {
         res.status(400).json({ success: false, message: err.message });
-    }
-});
-
-// Get teacher-specific dashboard data
-router.get('/teacher/:instructorId', async (req, res) => {
-    const { instructorId } = req.params;
-    try {
-        const dbRef = ref(rtdb);
-        const snapshot = await get(child(dbRef, 'courses'));
-
-        let teacherCourses = [];
-        if (snapshot.exists()) {
-            const allCourses = snapshot.val();
-            teacherCourses = Object.keys(allCourses)
-                .map(key => ({ id: key, ...allCourses[key] }))
-                .filter(course => course.instructorId === instructorId);
-        }
-
-        // Calculate Stats
-        const stats = {
-            totalCourses: teacherCourses.length,
-            totalStudents: 0, // Will implement enrollment logic later
-            totalHours: 0     // Will calculate from lectures later
-        };
-
-        res.json({
-            success: true,
-            courses: teacherCourses,
-            stats
-        });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
     }
 });
 

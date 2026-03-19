@@ -1,8 +1,10 @@
 import { authApi } from '@/constants/api';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
@@ -20,6 +22,7 @@ import {
 
 export default function StudentSignUp() {
     const router = useRouter();
+    const { colors, isDark } = useTheme();
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -62,34 +65,37 @@ export default function StudentSignUp() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar style={isDark ? 'light' : 'dark'} />
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
                 <ScrollView contentContainerStyle={styles.scrollContent}>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={24} color={Colors.secondary} />
+                        <Ionicons name="arrow-back" size={24} color={isDark ? colors.text : Colors.secondary} />
                     </TouchableOpacity>
 
                     <View style={styles.header}>
-                        <Text style={styles.title}>Student Sign Up</Text>
-                        <Text style={styles.subtitle}>Join Learnova to start learning</Text>
+                        <Text style={[styles.title, { color: colors.text }]}>Student Sign Up</Text>
+                        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Join Learnova to start learning</Text>
                     </View>
 
                     <View style={styles.form}>
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Full Name *</Text>
+                            <Text style={[styles.label, { color: colors.text }]}>Full Name *</Text>
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                 placeholder="Ali Ahmed"
+                                placeholderTextColor="#999"
                                 value={fullName}
                                 onChangeText={setFullName}
                             />
                         </View>
 
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Email Address *</Text>
+                            <Text style={[styles.label, { color: colors.text }]}>Email Address *</Text>
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                 placeholder="ali@example.com"
+                                placeholderTextColor="#999"
                                 keyboardType="email-address"
                                 autoCapitalize="none"
                                 value={email}
@@ -98,10 +104,11 @@ export default function StudentSignUp() {
                         </View>
 
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Password *</Text>
+                            <Text style={[styles.label, { color: colors.text }]}>Password *</Text>
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                 placeholder="••••••••"
+                                placeholderTextColor="#999"
                                 secureTextEntry
                                 value={password}
                                 onChangeText={setPassword}
@@ -118,7 +125,7 @@ export default function StudentSignUp() {
                     </View>
 
                     <View style={styles.footer}>
-                        <Text style={styles.footerText}>Already have an account? </Text>
+                        <Text style={[styles.footerText, { color: colors.textSecondary }]}>Already have an account? </Text>
                         <TouchableOpacity onPress={() => router.replace('/login')}>
                             <Text style={styles.loginText}>Login</Text>
                         </TouchableOpacity>

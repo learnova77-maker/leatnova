@@ -1,6 +1,7 @@
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -29,6 +30,7 @@ interface Announcement {
 
 export default function TeacherAnnouncements() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const { colors, isDark } = useTheme();
     const router = useRouter();
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [announcements, setAnnouncements] = useState<Announcement[]>([
@@ -56,8 +58,8 @@ export default function TeacherAnnouncements() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <AppSidebar role="teacher" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader
                 title="Announcement"
@@ -70,8 +72,8 @@ export default function TeacherAnnouncements() {
                 <View style={styles.screenHeader}>
                     <View style={styles.titleRow}>
                         <View>
-                            <Text style={styles.screenTitle}>Announcements</Text>
-                            <Text style={styles.screenSub}>Broadcast to your students</Text>
+                            <Text style={[styles.screenTitle, { color: colors.text }]}>Announcements</Text>
+                            <Text style={[styles.screenSub, { color: colors.textSecondary }]}>Broadcast to your students</Text>
                         </View>
                         <TouchableOpacity
                             style={styles.addButton}
@@ -87,12 +89,12 @@ export default function TeacherAnnouncements() {
                     data={announcements}
                     keyExtractor={(item) => item.id}
                     renderItem={({ item }) => (
-                        <View style={styles.annItem}>
+                        <View style={[styles.annItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <View style={styles.annHead}>
-                                <Text style={styles.annTitle}>{item.title}</Text>
-                                <Text style={styles.annDate}>{item.date}</Text>
+                                <Text style={[styles.annTitle, { color: colors.text }]}>{item.title}</Text>
+                                <Text style={[styles.annDate, { color: colors.textSecondary }]}>{item.date}</Text>
                             </View>
-                            <Text style={styles.annText}>{item.text}</Text>
+                            <Text style={[styles.annText, { color: colors.textSecondary }]}>{item.text}</Text>
                         </View>
                     )}
                     contentContainerStyle={styles.listContent}
@@ -116,9 +118,9 @@ export default function TeacherAnnouncements() {
                         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                         style={styles.modalContainer}
                     >
-                        <View style={styles.modalContent}>
+                        <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <View style={styles.modalHeader}>
-                                <Text style={styles.modalTitle}>New Announcement</Text>
+                                <Text style={[styles.modalTitle, { color: colors.text }]}>New Announcement</Text>
                                 <TouchableOpacity onPress={() => setIsModalVisible(false)}>
                                     <Ionicons name="close-circle" size={24} color={Colors.grey} />
                                 </TouchableOpacity>
@@ -132,9 +134,9 @@ export default function TeacherAnnouncements() {
                             >
                                 <View style={styles.form}>
                                     <View style={styles.inputGroup}>
-                                        <Text style={styles.label}>Heading</Text>
+                                        <Text style={[styles.label, { color: colors.textSecondary }]}>Heading</Text>
                                         <TextInput
-                                            style={styles.input}
+                                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                             placeholder="e.g. Schedule Change"
                                             placeholderTextColor="#AAA"
                                             value={newTitle}
@@ -143,9 +145,9 @@ export default function TeacherAnnouncements() {
                                     </View>
 
                                     <View style={styles.inputGroup}>
-                                        <Text style={styles.label}>Message Details</Text>
+                                        <Text style={[styles.label, { color: colors.textSecondary }]}>Message Details</Text>
                                         <TextInput
-                                            style={[styles.input, styles.textArea]}
+                                            style={[styles.input, styles.textArea, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                                             placeholder="Type your message here..."
                                             placeholderTextColor="#AAA"
                                             multiline

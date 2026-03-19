@@ -51,7 +51,7 @@ interface Post {
     comments?: Record<string, Comment>;
 }
 
-export default function StudentSocial() {
+export default function TeacherSocial() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const { colors, isDark } = useTheme();
     const [isModalVisible, setIsModalVisible] = useState(false);
@@ -319,7 +319,7 @@ export default function StudentSocial() {
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-            <AppSidebar role="student" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
+            <AppSidebar role="teacher" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader
                 title="Learnova"
                 toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}

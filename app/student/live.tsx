@@ -3,7 +3,9 @@ import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { liveApi } from '@/constants/api';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -19,9 +21,12 @@ import {
 
 export default function StudentLive() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const { colors, isDark } = useTheme();
     const [activeSessions, setActiveSessions] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isLiveRoom, setIsLiveRoom] = useState(false);
+    const [userName, setUserName] = useState('Student');
+    const [userUid, setUserUid] = useState<number | null>(null);
 
     // Live Session Data
     const [joinData, setJoinData] = useState<{
@@ -29,6 +34,7 @@ export default function StudentLive() {
         token: string;
         channelName: string;
         uid: number;
+        sessionId: string;
     } | null>(null);
 
     const fetchSessions = async () => {
@@ -45,6 +51,14 @@ export default function StudentLive() {
     };
 
     useEffect(() => {
+        const loadUser = async () => {
+            const userData = await AsyncStorage.getItem('user');
+            if (userData) {
+                const user = JSON.parse(userData);
+                setUserName(user.fullName);
+            }
+        };
+        loadUser();
         fetchSessions();
         // Poll every 10 seconds for new live classes
         const interval = setInterval(fetchSessions, 10000);
@@ -71,7 +85,8 @@ export default function StudentLive() {
                 appId,
                 token,
                 channelName: session.channelName,
-                uid
+                uid,
+                sessionId: session.id
             });
             setIsLiveRoom(true);
         } catch (err: any) {
@@ -93,6 +108,8 @@ export default function StudentLive() {
                 channelName={joinData.channelName}
                 token={joinData.token}
                 uid={joinData.uid}
+                sessionId={joinData.sessionId}
+                userName={userName}
                 role="subscriber"
                 onEnd={handleLeaveSession}
             />
@@ -100,15 +117,15 @@ export default function StudentLive() {
     }
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <AppSidebar role="student" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader title="Live Classes" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} role="student" />
 
             <View style={styles.screenContainer}>
                 <View style={styles.screenHeader}>
-                    <Text style={styles.screenTitle}>Active Sessions</Text>
-                    <Text style={styles.screenSub}>Join interactive live classes from your favorite tutors.</Text>
+                    <Text style={[styles.screenTitle, { color: colors.text }]}>Active Sessions</Text>
+                    <Text style={[styles.screenSub, { color: colors.textSecondary }]}>Join interactive live classes from your favorite tutors.</Text>
                 </View>
 
                 {isLoading && activeSessions.length === 0 ? (
@@ -118,14 +135,14 @@ export default function StudentLive() {
                         data={activeSessions}
                         keyExtractor={(item) => item.id}
                         renderItem={({ item }) => (
-                            <View style={styles.listItem}>
+                            <View style={[styles.listItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
                                 <View style={styles.liveBadgeSmall}>
                                     <View style={styles.dot} />
                                     <Text style={styles.liveTextSmall}>LIVE</Text>
                                 </View>
                                 <View style={styles.listText}>
-                                    <Text style={styles.itemName}>{item.title}</Text>
-                                    <Text style={styles.instructorName}>By {item.teacherName}</Text>
+                                    <Text style={[styles.itemName, { color: colors.text }]}>{item.title}</Text>
+                                    <Text style={[styles.instructorName, { color: colors.textSecondary }]}>By {item.teacherName}</Text>
                                 </View>
                                 <TouchableOpacity
                                     style={styles.joinBtn}

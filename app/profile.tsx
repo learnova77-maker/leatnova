@@ -1,11 +1,12 @@
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import React from 'react';
 import {
     SafeAreaView,
     ScrollView,
-    StatusBar,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -15,78 +16,79 @@ import {
 export default function ProfileScreen() {
     const router = useRouter();
     const { role } = useLocalSearchParams();
+    const { colors, isDark } = useTheme();
 
     const isTeacher = role === 'teacher';
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar style={isDark ? 'light' : 'dark'} />
 
-            <View style={styles.header}>
+            <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
                 <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={24} color={Colors.secondary} />
+                    <Ionicons name="arrow-back" size={24} color={isDark ? colors.text : Colors.secondary} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>My Profile</Text>
+                <Text style={[styles.headerTitle, { color: colors.text }]}>My Profile</Text>
                 <TouchableOpacity style={styles.editButton}>
-                    <Ionicons name="create-outline" size={24} color={Colors.secondary} />
+                    <Ionicons name="create-outline" size={24} color={isDark ? colors.text : Colors.secondary} />
                 </TouchableOpacity>
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                 {/* Profile Card */}
-                <View style={styles.profileCard}>
+                <View style={[styles.profileCard, { backgroundColor: colors.card }]}>
                     <View style={styles.avatarContainer}>
                         <View style={styles.avatar}>
                             <Ionicons name="person" size={50} color={Colors.white} />
                         </View>
-                        <TouchableOpacity style={styles.cameraIcon}>
+                        <TouchableOpacity style={[styles.cameraIcon, { borderColor: colors.card }]}>
                             <Ionicons name="camera" size={18} color={Colors.white} />
                         </TouchableOpacity>
                     </View>
 
-                    <Text style={styles.userName}>{isTeacher ? 'Prof. Wei Chen' : 'Ali Ahmed'}</Text>
-                    <Text style={styles.userRole}>{isTeacher ? 'Expert Instructor' : 'IELTS Student'}</Text>
+                    <Text style={[styles.userName, { color: colors.text }]}>{isTeacher ? 'Prof. Wei Chen' : 'Ali Ahmed'}</Text>
+                    <Text style={[styles.userRole, { color: colors.textSecondary }]}>{isTeacher ? 'Expert Instructor' : 'IELTS Student'}</Text>
 
                     <View style={styles.statsRow}>
                         <View style={styles.statItem}>
-                            <Text style={styles.statVal}>{isTeacher ? '128' : '12'}</Text>
-                            <Text style={styles.statLabel}>{isTeacher ? 'Students' : 'Courses'}</Text>
+                            <Text style={[styles.statVal, { color: colors.text }]}>{isTeacher ? '128' : '12'}</Text>
+                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{isTeacher ? 'Students' : 'Courses'}</Text>
                         </View>
-                        <View style={[styles.statItem, styles.statBorder]}>
-                            <Text style={styles.statVal}>{isTeacher ? '4.9' : '85%'}</Text>
-                            <Text style={styles.statLabel}>{isTeacher ? 'Rating' : 'Progress'}</Text>
+                        <View style={[styles.statItem, styles.statBorder, { borderColor: colors.border }]}>
+                            <Text style={[styles.statVal, { color: colors.text }]}>{isTeacher ? '4.9' : '85%'}</Text>
+                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{isTeacher ? 'Rating' : 'Progress'}</Text>
                         </View>
                         <View style={styles.statItem}>
-                            <Text style={styles.statVal}>{isTeacher ? '85' : '24'}</Text>
-                            <Text style={styles.statLabel}>{isTeacher ? 'Videos' : 'Badges'}</Text>
+                            <Text style={[styles.statVal, { color: colors.text }]}>{isTeacher ? '85' : '24'}</Text>
+                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{isTeacher ? 'Videos' : 'Badges'}</Text>
                         </View>
                     </View>
                 </View>
 
                 {/* Details Section */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Account Information</Text>
-                    <View style={styles.infoBox}>
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Account Information</Text>
+                    <View style={[styles.infoBox, { backgroundColor: colors.card }]}>
                         <View style={styles.infoRow}>
-                            <Ionicons name="mail-outline" size={20} color={Colors.grey} />
+                            <Ionicons name="mail-outline" size={20} color={colors.textSecondary} />
                             <View style={styles.infoTextContainer}>
-                                <Text style={styles.infoLabel}>Email Address</Text>
-                                <Text style={styles.infoValue}>{isTeacher ? 'wei.chen@learnova.com' : 'ali.ahmed@example.com'}</Text>
+                                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Email Address</Text>
+                                <Text style={[styles.infoValue, { color: colors.text }]}>{isTeacher ? 'wei.chen@learnova.com' : 'ali.ahmed@example.com'}</Text>
                             </View>
                         </View>
                         <View style={styles.infoRow}>
-                            <Ionicons name="school-outline" size={20} color={Colors.grey} />
+                            <Ionicons name="school-outline" size={20} color={colors.textSecondary} />
                             <View style={styles.infoTextContainer}>
-                                <Text style={styles.infoLabel}>{isTeacher ? 'Expertise' : 'Main Goal'}</Text>
-                                <Text style={styles.infoValue}>{isTeacher ? 'Web Development / Chinese' : 'IELTS Band 8.0'}</Text>
+                                <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>{isTeacher ? 'Expertise' : 'Main Goal'}</Text>
+                                <Text style={[styles.infoValue, { color: colors.text }]}>{isTeacher ? 'Web Development / Chinese' : 'IELTS Band 8.0'}</Text>
                             </View>
                         </View>
                         {isTeacher && (
                             <View style={styles.infoRow}>
-                                <Ionicons name="briefcase-outline" size={20} color={Colors.grey} />
+                                <Ionicons name="briefcase-outline" size={20} color={colors.textSecondary} />
                                 <View style={styles.infoTextContainer}>
-                                    <Text style={styles.infoLabel}>Experience</Text>
-                                    <Text style={styles.infoValue}>12 Years</Text>
+                                    <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>Experience</Text>
+                                    <Text style={[styles.infoValue, { color: colors.text }]}>12 Years</Text>
                                 </View>
                             </View>
                         )}
@@ -95,21 +97,21 @@ export default function ProfileScreen() {
 
                 {/* Settings Section */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Settings</Text>
-                    <View style={styles.infoBox}>
-                        <TouchableOpacity style={styles.settingsBtn}>
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Settings</Text>
+                    <View style={[styles.infoBox, { backgroundColor: colors.card }]}>
+                        <TouchableOpacity style={[styles.settingsBtn, { borderBottomColor: colors.border }]}>
                             <View style={styles.settingsRow}>
-                                <Ionicons name="notifications-outline" size={20} color={Colors.secondary} />
-                                <Text style={styles.settingsLabel}>Notifications</Text>
+                                <Ionicons name="notifications-outline" size={20} color={isDark ? colors.text : Colors.secondary} />
+                                <Text style={[styles.settingsLabel, { color: colors.text }]}>Notifications</Text>
                             </View>
-                            <Ionicons name="chevron-forward" size={18} color={Colors.grey} />
+                            <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.settingsBtn}>
+                        <TouchableOpacity style={[styles.settingsBtn, { borderBottomColor: colors.border }]}>
                             <View style={styles.settingsRow}>
-                                <Ionicons name="shield-checkmark-outline" size={20} color={Colors.secondary} />
-                                <Text style={styles.settingsLabel}>Privacy & Security</Text>
+                                <Ionicons name="shield-checkmark-outline" size={20} color={isDark ? colors.text : Colors.secondary} />
+                                <Text style={[styles.settingsLabel, { color: colors.text }]}>Privacy & Security</Text>
                             </View>
-                            <Ionicons name="chevron-forward" size={18} color={Colors.grey} />
+                            <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={styles.logoutBtn}

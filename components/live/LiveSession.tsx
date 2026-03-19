@@ -1,7 +1,9 @@
 import { Colors } from '@/constants/theme';
+import { rtdb } from '@/lib/firebase';
 import { Ionicons } from '@expo/vector-icons';
+import { get, onChildAdded, onValue, push, ref, set } from 'firebase/database';
 import React, { useEffect, useRef, useState } from 'react';
-import { PermissionsAndroid, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, KeyboardAvoidingView, PermissionsAndroid, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 // Import Agora SDK directly
 import {
@@ -18,17 +20,24 @@ interface LiveSessionProps {
     channelName: string;
     token: string;
     uid: number;
+    sessionId: string;
+    userName: string;
     role: 'publisher' | 'subscriber';
     onEnd: () => void;
 }
 
-const LiveSession: React.FC<LiveSessionProps> = ({ appId, channelName, token, uid, role, onEnd }) => {
+const LiveSession: React.FC<LiveSessionProps> = ({ appId, channelName, token, uid, role, onEnd, sessionId, userName }) => {
     const engineRef = useRef<IRtcEngine | null>(null);
     const [isJoined, setIsJoined] = useState(false);
     const [remoteUid, setRemoteUid] = useState<number | null>(null);
     const [isMuted, setIsMuted] = useState(false);
     const [isCameraOff, setIsCameraOff] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [messages, setMessages] = useState<any[]>([]);
+    const [inputText, setInputText] = useState('');
+    const [likesCount, setLikesCount] = useState(0);
+    const [isLiked, setIsLiked] = useState(false);
+    const scrollViewRef = useRef<FlatList>(null);
 
     // Request permissions on Android
     const requestPermissions = async () => {
@@ -108,6 +117,33 @@ const LiveSession: React.FC<LiveSessionProps> = ({ appId, channelName, token, ui
                     autoSubscribeAudio: true,
                     autoSubscribeVideo: true,
                 });
+
+                // Listen for Removal
+                if (role === 'subscriber') {
+                    const removalRef = ref(rtdb, `live_sessions/${sessionId}/removals/${uid}`);
+                    const unsubRemoval = onValue(removalRef, (snapshot) => {
+                        if (snapshot.exists()) {
+                            Alert.alert('Session Ended', 'The teacher has removed you from this session.');
+                            handleEndCall();
+                        }
+                    });
+                }
+
+                // Listen for Chat
+                const chatRef = ref(rtdb, `live_chats/${sessionId}`);
+                const unsubChat = onChildAdded(chatRef, (snapshot) => {
+                    const newMsg = { id: snapshot.key, ...snapshot.val() };
+                    setMessages((prev) => [...prev, newMsg]);
+                });
+
+                // Listen for Likes
+                const likesRef = ref(rtdb, `live_sessions/${sessionId}/likes`);
+                const unsubLikes = onValue(likesRef, (snapshot) => {
+                    if (snapshot.exists()) {
+                        setLikesCount(snapshot.val());
+                    }
+                });
+
             } catch (err: any) {
                 console.error('Engine init error:', err);
                 setError(err.message || 'Failed to initialize live streaming engine.');
@@ -116,7 +152,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ appId, channelName, token, ui
 
         initEngine();
 
-        // Cleanup on unmount
+        // Firebase cleanup
         return () => {
             const engine = engineRef.current;
             if (engine) {
@@ -124,6 +160,11 @@ const LiveSession: React.FC<LiveSessionProps> = ({ appId, channelName, token, ui
                 engine.release();
                 engineRef.current = null;
             }
+            // Detach listeners
+            const chatRef = ref(rtdb, `live_chats/${sessionId}`);
+            const likesRef = ref(rtdb, `live_sessions/${sessionId}/likes`);
+            const removalRef = ref(rtdb, `live_sessions/${sessionId}/removals/${uid}`);
+            // Note: off() is for older SDK, in v9 we use the return from onValue/onChildAdded
         };
     }, []);
 
@@ -151,6 +192,46 @@ const LiveSession: React.FC<LiveSessionProps> = ({ appId, channelName, token, ui
             engineRef.current = null;
         }
         onEnd();
+    };
+
+    const sendMessage = () => {
+        if (!inputText.trim()) return;
+        const chatRef = ref(rtdb, `live_chats/${sessionId}`);
+        push(chatRef, {
+            uid,
+            userName,
+            text: inputText.trim(),
+            timestamp: Date.now(),
+        });
+        setInputText('');
+    };
+
+    const handleLike = async () => {
+        if (isLiked) return;
+        setIsLiked(true);
+        const likesRef = ref(rtdb, `live_sessions/${sessionId}/likes`);
+        const snapshot = await get(likesRef);
+        const currentLikes = snapshot.exists() ? snapshot.val() : 0;
+        await set(likesRef, currentLikes + 1);
+    };
+
+    const handleRemoveStudent = (studentUid: number, studentName: string) => {
+        if (role !== 'publisher') return;
+        Alert.alert(
+            'Remove Student',
+            `Are you sure you want to remove ${studentName} from the live class?`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Remove',
+                    style: 'destructive',
+                    onPress: async () => {
+                        const removalRef = ref(rtdb, `live_sessions/${sessionId}/removals/${studentUid}`);
+                        await set(removalRef, true);
+                    }
+                }
+            ]
+        );
     };
 
     // Error Screen
@@ -222,39 +303,93 @@ const LiveSession: React.FC<LiveSessionProps> = ({ appId, channelName, token, ui
             </View>
 
             {/* Bottom Controls */}
-            <View style={styles.bottomBar}>
-                {role === 'publisher' && (
-                    <>
-                        <TouchableOpacity
-                            style={[styles.controlBtn, isMuted && styles.controlBtnActive]}
-                            onPress={handleToggleMute}
-                        >
-                            <Ionicons
-                                name={isMuted ? 'mic-off' : 'mic'}
-                                size={24}
-                                color="#FFF"
-                            />
-                            <Text style={styles.controlLabel}>{isMuted ? 'Unmute' : 'Mute'}</Text>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={styles.overlayContainer}
+            >
+                {/* Chat Display */}
+                <View style={styles.chatArea}>
+                    <FlatList
+                        ref={scrollViewRef}
+                        data={messages}
+                        keyExtractor={(item) => item.id}
+                        renderItem={({ item }) => (
+                            <TouchableOpacity
+                                onLongPress={() => handleRemoveStudent(item.uid, item.userName)}
+                                disabled={role !== 'publisher' || item.uid === uid}
+                            >
+                                <View style={styles.messageBubble}>
+                                    <Text style={styles.messageUser}>{item.userName}</Text>
+                                    <Text style={styles.messageText}>{item.text}</Text>
+                                </View>
+                            </TouchableOpacity>
+                        )}
+                        onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+                        showsVerticalScrollIndicator={false}
+                    />
+                </View>
+
+                <View style={styles.controlsGroup}>
+                    {/* Input Area */}
+                    <View style={styles.inputWrapper}>
+                        <TextInput
+                            style={styles.chatInput}
+                            placeholder="Say something..."
+                            placeholderTextColor="rgba(255,255,255,0.6)"
+                            value={inputText}
+                            onChangeText={setInputText}
+                            onSubmitEditing={sendMessage}
+                        />
+                        <TouchableOpacity style={styles.sendIcon} onPress={sendMessage}>
+                            <Ionicons name="send" size={24} color={Colors.primary} />
                         </TouchableOpacity>
 
-                        <TouchableOpacity
-                            style={[styles.controlBtn, isCameraOff && styles.controlBtnActive]}
-                            onPress={handleToggleCamera}
-                        >
+                        <TouchableOpacity style={styles.likeBtn} onPress={handleLike}>
                             <Ionicons
-                                name={isCameraOff ? 'videocam-off' : 'videocam'}
-                                size={24}
-                                color="#FFF"
+                                name={isLiked ? "heart" : "heart-outline"}
+                                size={28}
+                                color={isLiked ? "#FF4444" : "#FFF"}
                             />
-                            <Text style={styles.controlLabel}>{isCameraOff ? 'Camera On' : 'Camera Off'}</Text>
+                            {likesCount > 0 && <Text style={styles.likeCount}>{likesCount}</Text>}
                         </TouchableOpacity>
-                    </>
-                )}
+                    </View>
 
-                <TouchableOpacity style={styles.endBtn} onPress={handleEndCall}>
-                    <Ionicons name="call" size={28} color="#FFF" />
-                </TouchableOpacity>
-            </View>
+                    {/* Controls Row */}
+                    <View style={styles.bottomBar}>
+                        {role === 'publisher' && (
+                            <>
+                                <TouchableOpacity
+                                    style={[styles.controlBtn, isMuted && styles.controlBtnActive]}
+                                    onPress={handleToggleMute}
+                                >
+                                    <Ionicons
+                                        name={isMuted ? 'mic-off' : 'mic'}
+                                        size={22}
+                                        color="#FFF"
+                                    />
+                                    <Text style={styles.controlLabel}>{isMuted ? 'Unmute' : 'Mute'}</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={[styles.controlBtn, isCameraOff && styles.controlBtnActive]}
+                                    onPress={handleToggleCamera}
+                                >
+                                    <Ionicons
+                                        name={isCameraOff ? 'videocam-off' : 'videocam'}
+                                        size={22}
+                                        color="#FFF"
+                                    />
+                                    <Text style={styles.controlLabel}>{isCameraOff ? 'Camera On' : 'Camera Off'}</Text>
+                                </TouchableOpacity>
+                            </>
+                        )}
+
+                        <TouchableOpacity style={styles.endBtn} onPress={handleEndCall}>
+                            <Ionicons name="call" size={24} color="#FFF" />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </KeyboardAvoidingView>
         </View>
     );
 };
@@ -326,15 +461,12 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     bottomBar: {
-        position: 'absolute',
-        bottom: 40,
-        left: 0,
-        right: 0,
         flexDirection: 'row',
         justifyContent: 'center',
         alignItems: 'center',
-        gap: 20,
+        gap: 15,
         paddingHorizontal: 20,
+        marginTop: 10,
     },
     controlBtn: {
         backgroundColor: 'rgba(255,255,255,0.2)',
@@ -343,9 +475,11 @@ const styles = StyleSheet.create({
         borderRadius: 30,
         justifyContent: 'center',
         alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)',
     },
     controlBtnActive: {
-        backgroundColor: 'rgba(255,68,68,0.6)',
+        backgroundColor: 'rgba(255,68,68,0.7)',
     },
     controlLabel: {
         color: '#FFF',
@@ -354,12 +488,17 @@ const styles = StyleSheet.create({
     },
     endBtn: {
         backgroundColor: '#FF4444',
-        width: 70,
-        height: 70,
-        borderRadius: 35,
+        width: 68,
+        height: 68,
+        borderRadius: 34,
         justifyContent: 'center',
         alignItems: 'center',
         transform: [{ rotate: '135deg' }],
+        shadowColor: '#FF4444',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 5,
     },
     errorText: {
         color: '#FFF',
@@ -403,6 +542,74 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginTop: 15,
         paddingHorizontal: 30,
+    },
+    overlayContainer: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        paddingBottom: 30,
+    },
+    controlsGroup: {
+        width: '100%',
+    },
+    chatArea: {
+        height: 200,
+        paddingHorizontal: 20,
+        marginBottom: 10,
+    },
+    messageBubble: {
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        alignSelf: 'flex-start',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 14,
+        marginBottom: 5,
+        maxWidth: '80%',
+    },
+    messageUser: {
+        color: Colors.primary,
+        fontSize: 11,
+        fontWeight: 'bold',
+        marginBottom: 2,
+    },
+    messageText: {
+        color: '#FFF',
+        fontSize: 14,
+    },
+    inputWrapper: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        gap: 10,
+        marginBottom: 5,
+    },
+    chatInput: {
+        flex: 1,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        height: 48,
+        borderRadius: 24,
+        paddingHorizontal: 20,
+        color: '#FFF',
+        fontSize: 14,
+    },
+    sendIcon: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: Colors.secondary,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    likeBtn: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    likeCount: {
+        color: '#FFF',
+        fontSize: 10,
+        fontWeight: 'bold',
+        marginTop: -5,
     },
 });
 

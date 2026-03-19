@@ -2,6 +2,7 @@ import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { courseApi } from '@/constants/api';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
@@ -24,6 +25,7 @@ export default function TeacherIndex() {
     const [statsData, setStatsData] = useState({ totalCourses: 0, totalStudents: 0, totalHours: 0 });
     const [isLoading, setIsLoading] = useState(true);
     const router = useRouter();
+    const { colors, isDark } = useTheme();
 
     useEffect(() => {
         const loadDashboard = async () => {
@@ -64,8 +66,8 @@ export default function TeacherIndex() {
     }
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <AppSidebar role="teacher" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader
                 title="Learnova"
@@ -77,25 +79,25 @@ export default function TeacherIndex() {
 
             <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
                 <View style={styles.welcomeSection}>
-                    <Text style={styles.hiText}>Teacher Dashboard</Text>
-                    <Text style={styles.subHiText}>Welcome back, {teacherName}</Text>
+                    <Text style={[styles.hiText, { color: colors.text }]}>Teacher Dashboard</Text>
+                    <Text style={[styles.subHiText, { color: colors.textSecondary }]}>Welcome back, {teacherName}</Text>
                 </View>
 
                 <View style={styles.statsRow}>
                     {dashboardStats.map((stat, i) => (
-                        <View key={i} style={styles.statCard}>
+                        <View key={i} style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <View style={[styles.statIcon, { backgroundColor: stat.color + '10' }]}>
                                 <Ionicons name={stat.icon as any} size={18} color={stat.color} />
                             </View>
-                            <Text style={styles.statVal}>{stat.value}</Text>
-                            <Text style={styles.statName}>{stat.title}</Text>
+                            <Text style={[styles.statVal, { color: colors.text }]}>{stat.value}</Text>
+                            <Text style={[styles.statName, { color: colors.textSecondary }]}>{stat.title}</Text>
                         </View>
                     ))}
                 </View>
 
-                <View style={styles.homeworkCard}>
+                <View style={[styles.homeworkCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.hHeader}>
-                        <Text style={styles.hTitle}>My Courses</Text>
+                        <Text style={[styles.hTitle, { color: colors.text }]}>My Courses</Text>
                         <TouchableOpacity onPress={() => router.push('/teacher/courses')}>
                             <Text style={styles.seeAll}>Manage Curriculum</Text>
                         </TouchableOpacity>

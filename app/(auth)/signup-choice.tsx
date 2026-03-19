@@ -1,6 +1,8 @@
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import React from 'react';
 import {
     SafeAreaView,
@@ -12,50 +14,52 @@ import {
 
 export default function SignUpChoice() {
     const router = useRouter();
+    const { colors, isDark } = useTheme();
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar style={isDark ? 'light' : 'dark'} />
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                <Ionicons name="arrow-back" size={24} color={Colors.secondary} />
+                <Ionicons name="arrow-back" size={24} color={isDark ? colors.text : Colors.secondary} />
             </TouchableOpacity>
 
             <View style={styles.content}>
-                <Text style={styles.title}>Join Learnova</Text>
-                <Text style={styles.subtitle}>Select how you want to use the platform</Text>
+                <Text style={[styles.title, { color: colors.text }]}>Join Learnova</Text>
+                <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Select how you want to use the platform</Text>
 
                 <View style={styles.choices}>
                     <TouchableOpacity
-                        style={styles.choiceCard}
+                        style={[styles.choiceCard, { backgroundColor: colors.card, borderColor: colors.border }]}
                         onPress={() => router.push('/student-signup')}
                     >
-                        <View style={[styles.iconCircle, { backgroundColor: '#E8F4FD' }]}>
+                        <View style={[styles.iconCircle, { backgroundColor: isDark ? '#1A2744' : '#E8F4FD' }]}>
                             <Ionicons name="person" size={32} color={Colors.primary} />
                         </View>
                         <View style={styles.choiceText}>
-                            <Text style={styles.choiceTitle}>Sign up as Student</Text>
-                            <Text style={styles.choiceDescription}>Learn from the best instructors around the world.</Text>
+                            <Text style={[styles.choiceTitle, { color: colors.text }]}>Sign up as Student</Text>
+                            <Text style={[styles.choiceDescription, { color: colors.textSecondary }]}>Learn from the best instructors around the world.</Text>
                         </View>
-                        <Ionicons name="chevron-forward" size={20} color={Colors.grey} />
+                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={styles.choiceCard}
+                        style={[styles.choiceCard, { backgroundColor: colors.card, borderColor: colors.border }]}
                         onPress={() => router.push('/signup')}
                     >
-                        <View style={[styles.iconCircle, { backgroundColor: '#FDF2E9' }]}>
+                        <View style={[styles.iconCircle, { backgroundColor: isDark ? '#2D1F15' : '#FDF2E9' }]}>
                             <Ionicons name="school" size={32} color="#E67E22" />
                         </View>
                         <View style={styles.choiceText}>
-                            <Text style={styles.choiceTitle}>Sign up as Teacher</Text>
-                            <Text style={styles.choiceDescription}>Share your knowledge and earn from your expertise.</Text>
+                            <Text style={[styles.choiceTitle, { color: colors.text }]}>Sign up as Teacher</Text>
+                            <Text style={[styles.choiceDescription, { color: colors.textSecondary }]}>Share your knowledge and earn from your expertise.</Text>
                         </View>
-                        <Ionicons name="chevron-forward" size={20} color={Colors.grey} />
+                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                     </TouchableOpacity>
                 </View>
             </View>
 
-            <View style={styles.footer}>
-                <Text style={styles.footerText}>Already have an account? </Text>
+            <View style={[styles.footer, { borderTopColor: colors.border }]}>
+                <Text style={[styles.footerText, { color: colors.textSecondary }]}>Already have an account? </Text>
                 <TouchableOpacity onPress={() => router.replace('/login')}>
                     <Text style={styles.loginText}>Login</Text>
                 </TouchableOpacity>

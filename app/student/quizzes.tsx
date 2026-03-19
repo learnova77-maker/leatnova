@@ -1,6 +1,7 @@
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import React, { useState } from 'react';
 import {
     FlatList,
@@ -13,6 +14,7 @@ import {
 
 export default function StudentQuizzes() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const { colors, isDark } = useTheme();
 
     const quizzes = [
         { id: '1', title: 'Reading Mock Test #4', questions: '40', time: '60 mins', score: '--' },
@@ -20,27 +22,27 @@ export default function StudentQuizzes() {
     ];
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <AppSidebar role="student" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader title="Quizzes" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
 
             <View style={styles.screenContainer}>
                 <View style={styles.screenHeader}>
-                    <Text style={styles.screenTitle}>My Quizzes</Text>
-                    <Text style={styles.screenSub}>Test your knowledge and track scores</Text>
+                    <Text style={[styles.screenTitle, { color: colors.text }]}>My Quizzes</Text>
+                    <Text style={[styles.screenSub, { color: colors.textSecondary }]}>Test your knowledge and track scores</Text>
                 </View>
                 <FlatList
                     data={quizzes}
                     keyExtractor={(item) => item.id}
                     renderItem={({ item }) => (
-                        <View style={styles.listItem}>
+                        <View style={[styles.listItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <View style={styles.listText}>
-                                <Text style={styles.itemName}>{item.title}</Text>
-                                <Text style={styles.itemSub}>{item.questions} Questions • {item.time}</Text>
+                                <Text style={[styles.itemName, { color: colors.text }]}>{item.title}</Text>
+                                <Text style={[styles.itemSub, { color: colors.textSecondary }]}>{item.questions} Questions • {item.time}</Text>
                             </View>
-                            <View style={styles.scoreBox}>
-                                <Text style={styles.scoreText}>{item.score}</Text>
+                            <View style={[styles.scoreBox, { backgroundColor: colors.primary + '20' }]}>
+                                <Text style={[styles.scoreText, { color: colors.text }]}>{item.score}</Text>
                             </View>
                         </View>
                     )}

@@ -1,8 +1,10 @@
 import { authApi } from '@/constants/api';
 import { Colors } from '@/constants/theme';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import React, { useState } from 'react';
 
 import {
@@ -24,6 +26,7 @@ type UserRole = 'student' | 'teacher';
 
 export default function LoginScreen() {
     const router = useRouter();
+    const { colors, isDark } = useTheme();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [role, setRole] = useState<UserRole>('student');
@@ -80,7 +83,8 @@ export default function LoginScreen() {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar style={isDark ? 'light' : 'dark'} />
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
@@ -93,8 +97,8 @@ export default function LoginScreen() {
                             style={styles.logo}
                             resizeMode="contain"
                         />
-                        <Text style={styles.title}>Learnova</Text>
-                        <Text style={styles.subtitle}>Login to your account</Text>
+                        <Text style={[styles.title, { color: colors.text }]}>Learnova</Text>
+                        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Login to your account</Text>
                     </View>
 
                     {/* Role Selection */}
@@ -113,7 +117,7 @@ export default function LoginScreen() {
                             />
                             <Text style={[
                                 styles.roleButtonText,
-                                role === 'student' && styles.activeRoleButtonText
+                                role === 'student' ? { color: Colors.secondary } : { color: colors.textSecondary }
                             ]}>Student</Text>
                         </TouchableOpacity>
 
@@ -131,7 +135,7 @@ export default function LoginScreen() {
                             />
                             <Text style={[
                                 styles.roleButtonText,
-                                role === 'teacher' && styles.activeRoleButtonText
+                                role === 'teacher' ? { color: Colors.secondary } : { color: colors.textSecondary }
                             ]}>Teacher</Text>
                         </TouchableOpacity>
                     </View>
@@ -139,11 +143,11 @@ export default function LoginScreen() {
                     {/* Form Section */}
                     <View style={styles.form}>
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Email or Phone</Text>
-                            <View style={styles.inputWrapper}>
-                                <Ionicons name="mail-outline" size={20} color={Colors.grey} style={styles.inputIcon} />
+                            <Text style={[styles.label, { color: colors.text }]}>Email or Phone</Text>
+                            <View style={[styles.inputWrapper, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                                <Ionicons name="mail-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                                 <TextInput
-                                    style={styles.input}
+                                    style={[styles.input, { color: colors.text }]}
                                     placeholder="example@mail.com"
                                     placeholderTextColor="#999"
                                     keyboardType="email-address"
@@ -155,11 +159,11 @@ export default function LoginScreen() {
                         </View>
 
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Password</Text>
-                            <View style={styles.inputWrapper}>
-                                <Ionicons name="lock-closed-outline" size={20} color={Colors.grey} style={styles.inputIcon} />
+                            <Text style={[styles.label, { color: colors.text }]}>Password</Text>
+                            <View style={[styles.inputWrapper, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+                                <Ionicons name="lock-closed-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                                 <TextInput
-                                    style={styles.input}
+                                    style={[styles.input, { color: colors.text }]}
                                     placeholder="••••••••"
                                     placeholderTextColor="#999"
                                     secureTextEntry
@@ -170,22 +174,31 @@ export default function LoginScreen() {
                         </View>
 
                         <TouchableOpacity
-                            style={[styles.loginButton, isLoading && { opacity: 0.7 }]}
+                            style={[
+                                styles.loginButton,
+                                { backgroundColor: isDark ? Colors.primary : Colors.secondary },
+                                isLoading && { opacity: 0.7 }
+                            ]}
                             onPress={handleLogin}
                             activeOpacity={0.8}
                             disabled={isLoading}
                         >
                             {isLoading ? (
-                                <ActivityIndicator color={Colors.white} />
+                                <ActivityIndicator color={isDark ? Colors.secondary : Colors.white} />
                             ) : (
-                                <Text style={styles.loginButtonText}>Login as {role === 'student' ? 'Student' : 'Teacher'}</Text>
+                                <Text style={[
+                                    styles.loginButtonText,
+                                    { color: isDark ? Colors.secondary : Colors.white }
+                                ]}>
+                                    Login as {role === 'student' ? 'Student' : 'Teacher'}
+                                </Text>
                             )}
                         </TouchableOpacity>
                     </View>
 
                     {/* Footer */}
                     <View style={styles.footer}>
-                        <Text style={styles.footerText}>Don't have an account? </Text>
+                        <Text style={[styles.footerText, { color: colors.textSecondary }]}>Don't have an account? </Text>
                         <TouchableOpacity onPress={() => router.push('/signup-choice')}>
                             <Text style={styles.signUpText}>Sign Up</Text>
                         </TouchableOpacity>
@@ -290,14 +303,13 @@ const styles = StyleSheet.create({
     loginButton: {
         width: '100%',
         height: 60,
-        backgroundColor: Colors.secondary,
         borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
         marginTop: 10,
-        shadowColor: Colors.secondary,
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
+        shadowOpacity: 0.1,
         shadowRadius: 8,
         elevation: 4,
     },
