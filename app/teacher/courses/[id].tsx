@@ -20,11 +20,10 @@ import {
     ScrollView,
     StatusBar,
     StyleSheet,
-    Switch,
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 
 interface Lecture {
@@ -171,7 +170,28 @@ export default function TeacherCourses() {
     };
 
     const handleDeleteModule = (id: string) => {
-        setModules(modules.filter(m => m.id !== id));
+        Alert.alert(
+            'Delete Module',
+            'Are you sure you want to delete this module? This will also remove any lectures inside it.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            const res = await courseApi.deleteModule(currentCourseId, id);
+                            if (res.data.success) {
+                                setModules(modules.filter(m => m.id !== id));
+                            }
+                        } catch (err) {
+                            Alert.alert('Error', 'Failed to delete module from database. Please try again.');
+                            console.error('Delete module error:', err);
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     const closeModuleModal = () => {
@@ -187,6 +207,23 @@ export default function TeacherCourses() {
 
         setIsLoading(true);
         try {
+            let finalVideoUrl = lectureUrl;
+
+            // 1. IF teacher selected a local file, UPLOAD it to Firebase Storage first
+            if (lectureVideo && lectureVideo.startsWith('file://')) {
+                const { getStorage, ref: sRef, uploadBytes, getDownloadURL } = require('firebase/storage');
+                const storage = getStorage();
+                const filename = `lectures/${currentCourseId}/${Date.now()}.mp4`;
+                const storageRef = sRef(storage, filename);
+
+                const response = await fetch(lectureVideo);
+                const blob = await response.blob();
+
+                const uploadResult = await uploadBytes(storageRef, blob);
+                finalVideoUrl = await getDownloadURL(uploadResult.ref);
+                console.log('Video uploaded successfully:', finalVideoUrl);
+            }
+
             const lectureData = {
                 courseId: currentCourseId,
                 moduleId: activeModuleId,
@@ -194,8 +231,7 @@ export default function TeacherCourses() {
                 duration: lectureDuration || '00:00',
                 type: lectureType,
                 isPreviewFree,
-                url: lectureUrl,
-                videoUrl: lectureVideo, // Added uploaded video
+                url: finalVideoUrl, // Use the uploaded URL or the manually entered one
                 scheduledAt: lectureType === 'Live' ? scheduledAt : ''
             };
 
@@ -208,8 +244,7 @@ export default function TeacherCourses() {
                     duration: lectureDuration || '00:00',
                     type: lectureType,
                     isPreviewFree: isPreviewFree,
-                    url: lectureUrl,
-                    videoUrl: lectureVideo || undefined,
+                    url: finalVideoUrl,
                     scheduledAt: lectureType === 'Live' ? scheduledAt : ''
                 };
 
@@ -219,7 +254,8 @@ export default function TeacherCourses() {
             }
             closeLectureModal();
         } catch (err) {
-            Alert.alert('Error', 'Failed to add lecture.');
+            console.error('Upload/Save error:', err);
+            Alert.alert('Error', 'Failed to upload video or save lecture. Please check connection.');
         } finally {
             setIsLoading(false);
         }
@@ -236,6 +272,9 @@ export default function TeacherCourses() {
         setScheduledAt('');
         setIsPreviewFree(false);
     };
+
+    const hasModules = modules.length > 0;
+    const hasLectures = modules.some((m: any) => m.lectures && m.lectures.length > 0);
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -255,6 +294,16 @@ export default function TeacherCourses() {
                     keyExtractor={(item) => item.id}
                     ListHeaderComponent={
                         <View style={styles.screenHeader}>
+                            {(!hasModules || !hasLectures) && (
+                                <View style={{ backgroundColor: '#FFF3CD', padding: 12, borderRadius: 8, marginBottom: 15, borderWidth: 1, borderColor: '#FFEEBA', flexDirection: 'row', alignItems: 'center' }}>
+                                    <Ionicons name="warning" size={20} color="#856404" />
+                                    <Text style={{ color: '#856404', marginLeft: 8, fontSize: 13, flex: 1, fontWeight: '500' }}>
+                                        {!hasModules
+                                            ? "Your course isn't live. Please add a module to make it live."
+                                            : "Your course isn't live. Please add a lecture to make it live."}
+                                    </Text>
+                                </View>
+                            )}
                             <View style={styles.titleRow}>
                                 <View style={{ flex: 1, marginRight: 10 }}>
                                     <Text style={styles.screenTitle}>Curriculum</Text>
@@ -271,22 +320,22 @@ export default function TeacherCourses() {
                         </View>
                     }
                     renderItem={({ item }) => (
-                        <View style={styles.moduleCard}>
-                            <View style={[styles.moduleHeader, { flexDirection: 'row', alignItems: 'center' }]}>
+                        <View style={[styles.moduleCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={[styles.moduleHeader, { flexDirection: 'row', alignItems: 'center', borderBottomColor: colors.border }]}>
                                 {item.thumbnail && (
-                                    <View style={styles.moduleThumbBoxList}>
+                                    <View style={[styles.moduleThumbBoxList, { backgroundColor: colors.surface }]}>
                                         <Image source={{ uri: item.thumbnail }} style={styles.moduleThumbImg} />
                                     </View>
                                 )}
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.moduleTitle}>{item.title}</Text>
-                                    <Text style={styles.lectureCount}>{item.lectures.length} Lectures</Text>
+                                    <Text style={[styles.moduleTitle, { color: colors.text }]}>{item.title}</Text>
+                                    <Text style={[styles.lectureCount, { color: colors.textSecondary }]}>{item.lectures.length} Lectures</Text>
                                 </View>
                                 <View style={styles.moduleActions}>
-                                    <TouchableOpacity onPress={() => openEditModule(item)} style={styles.actionIconBtn}>
+                                    <TouchableOpacity onPress={() => openEditModule(item)} style={[styles.actionIconBtn, { backgroundColor: colors.surface }]}>
                                         <Ionicons name="pencil" size={18} color={Colors.secondary} />
                                     </TouchableOpacity>
-                                    <TouchableOpacity onPress={() => handleDeleteModule(item.id)} style={styles.actionIconBtn}>
+                                    <TouchableOpacity onPress={() => handleDeleteModule(item.id)} style={[styles.actionIconBtn, { backgroundColor: colors.surface }]}>
                                         <Ionicons name="trash" size={18} color="#EB5757" />
                                     </TouchableOpacity>
                                 </View>
@@ -295,22 +344,22 @@ export default function TeacherCourses() {
                             <View style={styles.lectureList}>
                                 {item.lectures.map((lec) => (
                                     <View key={lec.id} style={styles.lectureItem}>
-                                        <View style={styles.lectureIconBox}>
+                                        <View style={[styles.lectureIconBox, { backgroundColor: colors.surface }]}>
                                             <Ionicons
                                                 name={lec.type === 'Video' ? 'play-circle' : lec.type === 'Live' ? 'videocam' : 'document-text'}
                                                 size={18}
-                                                color={Colors.grey}
+                                                color={colors.textSecondary}
                                             />
                                         </View>
                                         <View style={{ flex: 1 }}>
-                                            <Text style={styles.lectureName}>{lec.title}</Text>
-                                            <Text style={styles.lectureMeta}>{lec.duration} • {lec.isPreviewFree ? 'Free Preview' : 'Locked'}</Text>
+                                            <Text style={[styles.lectureName, { color: colors.text }]}>{lec.title}</Text>
+                                            <Text style={[styles.lectureMeta, { color: colors.textSecondary }]}>{lec.duration}</Text>
                                         </View>
                                     </View>
                                 ))}
 
                                 <TouchableOpacity
-                                    style={styles.addLectureBtn}
+                                    style={[styles.addLectureBtn, { backgroundColor: isDark ? colors.surface : '#F0F9FF', borderColor: Colors.primary }]}
                                     onPress={() => {
                                         setActiveModuleId(item.id);
                                         setIsLectureModalVisible(true);
@@ -329,38 +378,39 @@ export default function TeacherCourses() {
 
             {/* --- Add/Edit Module Modal --- */}
             <Modal visible={isModuleModalVisible} animationType="fade" transparent onRequestClose={closeModuleModal}>
-                <View style={styles.modalOverlay}>
+                <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.7)' }]}>
                     <Pressable style={StyleSheet.absoluteFill} onPress={closeModuleModal}>
                         <View style={styles.blurOverlay} />
                     </Pressable>
                     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalContainer}>
-                        <View style={styles.modalContent}>
+                        <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                             <View style={styles.modalHeaderInner}>
-                                <Text style={styles.modalTitle}>{editingModule ? 'Edit Module' : 'Create Module'}</Text>
+                                <Text style={[styles.modalTitle, { color: colors.text }]}>{editingModule ? 'Edit Module' : 'Create Module'}</Text>
                                 <TouchableOpacity onPress={closeModuleModal}>
-                                    <Ionicons name="close-circle" size={24} color={Colors.grey} />
+                                    <Ionicons name="close-circle" size={24} color={colors.textSecondary} />
                                 </TouchableOpacity>
                             </View>
 
                             <View style={styles.formItem}>
-                                <Text style={styles.label}>Module Title</Text>
+                                <Text style={[styles.label, { color: colors.text }]}>Module Title</Text>
                                 <TextInput
-                                    style={styles.input}
+                                    style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
                                     placeholder="e.g. Getting Started"
+                                    placeholderTextColor={colors.textSecondary}
                                     value={moduleTitle}
                                     onChangeText={setModuleTitle}
                                 />
                             </View>
 
                             <View style={styles.formItem}>
-                                <Text style={styles.label}>Module Thumbnail</Text>
-                                <TouchableOpacity style={styles.imagePickerCompact} onPress={pickModuleImage}>
+                                <Text style={[styles.label, { color: colors.text }]}>Module Thumbnail</Text>
+                                <TouchableOpacity style={[styles.imagePickerCompact, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={pickModuleImage}>
                                     {moduleThumbnail ? (
                                         <Image source={{ uri: moduleThumbnail }} style={styles.previewImage} />
                                     ) : (
                                         <View style={styles.imagePlaceholderCompact}>
-                                            <Ionicons name="image-outline" size={24} color={Colors.grey} />
-                                            <Text style={styles.imagePlaceholderTextCompact}>Add Thumbnail</Text>
+                                            <Ionicons name="image-outline" size={24} color={colors.textSecondary} />
+                                            <Text style={[styles.imagePlaceholderTextCompact, { color: colors.textSecondary }]}>Add Thumbnail</Text>
                                         </View>
                                     )}
                                 </TouchableOpacity>
@@ -384,108 +434,46 @@ export default function TeacherCourses() {
 
             {/* --- Add Lecture Modal --- */}
             <Modal visible={isLectureModalVisible} animationType="fade" transparent onRequestClose={closeLectureModal}>
-                <View style={styles.modalOverlay}>
+                <View style={[styles.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.7)' }]}>
                     <Pressable style={StyleSheet.absoluteFill} onPress={closeLectureModal}>
                         <View style={styles.blurOverlay} />
                     </Pressable>
                     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalContainer}>
-                        <View style={styles.modalContent}>
+                        <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                             <View style={styles.modalHeaderInner}>
-                                <Text style={styles.modalTitle}>New Lecture</Text>
+                                <Text style={[styles.modalTitle, { color: colors.text }]}>New Video Lecture</Text>
                                 <TouchableOpacity onPress={closeLectureModal}>
-                                    <Ionicons name="close-circle" size={24} color={Colors.grey} />
+                                    <Ionicons name="close-circle" size={24} color={colors.textSecondary} />
                                 </TouchableOpacity>
                             </View>
 
                             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 450 }}>
                                 <View style={styles.formItem}>
-                                    <Text style={styles.label}>Lecture Title</Text>
+                                    <Text style={[styles.label, { color: colors.text }]}>Lecture Title</Text>
                                     <TextInput
-                                        style={styles.input}
-                                        placeholder="e.g. Setting up Environment"
+                                        style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                                        placeholder="e.g. Master React in 10 mins"
+                                        placeholderTextColor={colors.textSecondary}
                                         value={lectureTitle}
                                         onChangeText={setLectureTitle}
                                     />
                                 </View>
 
                                 <View style={styles.formItem}>
-                                    <Text style={styles.label}>Video URL (Optional)</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        placeholder="https://youtube.com/..."
-                                        value={lectureUrl}
-                                        onChangeText={setLectureUrl}
-                                    />
-                                </View>
-
-                                {lectureType === 'Video' && (
-                                    <View style={styles.formItem}>
-                                        <Text style={styles.label}>Upload Video File</Text>
-                                        <TouchableOpacity style={styles.imagePickerCompact} onPress={pickLectureVideo}>
-                                            {lectureVideo ? (
-                                                <View style={styles.imagePlaceholderCompact}>
-                                                    <Ionicons name="film-outline" size={24} color={Colors.primary} />
-                                                    <Text style={[styles.imagePlaceholderTextCompact, { color: Colors.primary }]}>Video Selected</Text>
-                                                </View>
-                                            ) : (
-                                                <View style={styles.imagePlaceholderCompact}>
-                                                    <Ionicons name="videocam-outline" size={24} color={Colors.grey} />
-                                                    <Text style={styles.imagePlaceholderTextCompact}>Choose Video from Gallery</Text>
-                                                </View>
-                                            )}
-                                        </TouchableOpacity>
-                                    </View>
-                                )}
-
-                                <View style={styles.rowInputs}>
-                                    <View style={[styles.formItem, { flex: 1 }]}>
-                                        <Text style={styles.label}>Duration</Text>
-                                        <TextInput
-                                            style={styles.input}
-                                            placeholder="12:30"
-                                            value={lectureDuration}
-                                            onChangeText={setLectureDuration}
-                                        />
-                                    </View>
-                                    <View style={[styles.formItem, { flex: 1.5, marginLeft: 10 }]}>
-                                        <Text style={styles.label}>Lecture Type</Text>
-                                        <View style={styles.typeSelector}>
-                                            {(['Video', 'Live', 'PDF'] as const).map(type => (
-                                                <TouchableOpacity
-                                                    key={type}
-                                                    style={[styles.typeBtn, lectureType === type && styles.typeBtnActive]}
-                                                    onPress={() => setLectureType(type)}
-                                                >
-                                                    <Text style={[styles.typeBtnText, lectureType === type && styles.typeBtnTextActive]}>{type}</Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                        </View>
-                                    </View>
-                                </View>
-
-                                {lectureType === 'Live' && (
-                                    <View style={styles.formItem}>
-                                        <Text style={styles.label}>Schedule Date & Time</Text>
-                                        <TextInput
-                                            style={styles.input}
-                                            placeholder="e.g. 24th Oct, 5:00 PM"
-                                            value={scheduledAt}
-                                            onChangeText={setScheduledAt}
-                                        />
-                                    </View>
-                                )}
-
-                                <View style={styles.switchRow}>
-                                    <View>
-                                        <Text style={styles.label}>Is Preview Free?</Text>
-                                        <Text style={styles.switchSub}>Students can watch without buying</Text>
-                                    </View>
-                                    <Switch
-                                        value={isPreviewFree}
-                                        onValueChange={setIsPreviewFree}
-                                        trackColor={{ false: '#EEE', true: Colors.primary }}
-                                        thumbColor={isPreviewFree ? Colors.secondary : '#FFF'}
-                                    />
+                                    <Text style={[styles.label, { color: colors.text }]}>Video File</Text>
+                                    <TouchableOpacity style={[styles.imagePickerCompact, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={pickLectureVideo}>
+                                        {lectureVideo ? (
+                                            <View style={styles.imagePlaceholderCompact}>
+                                                <Ionicons name="film" size={24} color={Colors.primary} />
+                                                <Text style={[styles.imagePlaceholderTextCompact, { color: Colors.primary }]}>Video Selected</Text>
+                                            </View>
+                                        ) : (
+                                            <View style={styles.imagePlaceholderCompact}>
+                                                <Ionicons name="videocam-outline" size={24} color={colors.textSecondary} />
+                                                <Text style={[styles.imagePlaceholderTextCompact, { color: colors.textSecondary }]}>Select Video from Phone</Text>
+                                            </View>
+                                        )}
+                                    </TouchableOpacity>
                                 </View>
 
                                 <TouchableOpacity

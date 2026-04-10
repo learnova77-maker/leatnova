@@ -26,6 +26,20 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
+
+const PREDEFINED_CATEGORIES = [
+    'Programming & Tech',
+    'Language & Communication',
+    'Business & Finance',
+    'Art & Design',
+    'Health & Fitness',
+    'Science & Nature',
+    'Mathematics',
+    'Music & Audio',
+    'Photography & Video',
+    'Marketing & Sales'
+];
 
 export default function TeacherCourseList() {
     const router = useRouter();
@@ -39,6 +53,8 @@ export default function TeacherCourseList() {
     const [newCourseTitle, setNewCourseTitle] = useState('');
     const [newCoursePrice, setNewCoursePrice] = useState('');
     const [newCourseCategory, setNewCourseCategory] = useState('');
+    const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
+    const [newCourseDescription, setNewCourseDescription] = useState('');
     const [thumbnail, setThumbnail] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -83,6 +99,21 @@ export default function TeacherCourseList() {
             return;
         }
 
+        if (!PREDEFINED_CATEGORIES.includes(newCourseCategory)) {
+            Alert.alert('Invalid Category', 'Please select a valid category from the suggestions.');
+            return;
+        }
+
+        const wordCount = newCourseDescription.trim() ? newCourseDescription.trim().split(/\s+/).length : 0;
+        if (wordCount > 50) {
+            Alert.alert('Limit Exceeded', 'The course description cannot exceed 50 words.');
+            return;
+        }
+        if (!thumbnail) {
+            Alert.alert('Thumbnail Required', 'Please upload a course thumbnail before launching.');
+            return;
+        }
+
         setIsSubmitting(true);
         try {
             const userData = await AsyncStorage.getItem('user');
@@ -94,6 +125,7 @@ export default function TeacherCourseList() {
                     instructorName: user.fullName,
                     price: newCoursePrice || '0',
                     category: newCourseCategory || 'General',
+                    description: newCourseDescription.trim(),
                     thumbnail: thumbnail, // Send thumbnail URI
                     status: 'active'
                 };
@@ -104,6 +136,7 @@ export default function TeacherCourseList() {
                     setNewCourseTitle('');
                     setNewCoursePrice('');
                     setNewCourseCategory('');
+                    setNewCourseDescription('');
                     setThumbnail(null);
                     loadCourses();
                     Alert.alert('Success', 'Course created! Now you can add modules and lectures.');
@@ -114,6 +147,42 @@ export default function TeacherCourseList() {
         } finally {
             setIsSubmitting(false);
         }
+    };
+
+    const handleDeleteCourse = (id: string) => {
+        Alert.alert(
+            'Delete Course',
+            'Are you sure you want to permanently delete this course and all its content?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            const res = await courseApi.deleteCourse(id);
+                            if (res.data.success) {
+                                setCourses(prev => prev.filter(c => c.id !== id));
+                            }
+                        } catch (err) {
+                            Alert.alert('Error', 'Failed to delete course');
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    const renderLeftActions = (id: string) => {
+        return (
+            <TouchableOpacity
+                style={styles.deleteAction}
+                onPress={() => handleDeleteCourse(id)}
+            >
+                <Ionicons name="trash-outline" size={24} color="#FFF" />
+                <Text style={styles.deleteActionText}>Delete</Text>
+            </TouchableOpacity>
+        );
     };
 
     return (
@@ -145,27 +214,34 @@ export default function TeacherCourseList() {
                         data={courses}
                         keyExtractor={(item) => item.id}
                         renderItem={({ item }) => (
-                            <TouchableOpacity
-                                style={styles.courseCard}
-                                onPress={() => router.push(`/teacher/courses/${item.id}`)}
+                            <Swipeable
+                                renderLeftActions={() => renderLeftActions(item.id)}
+                                friction={2}
+                                leftThreshold={40}
                             >
-                                <View style={styles.courseIconBox}>
-                                    {item.thumbnail ? (
-                                        <Image source={{ uri: item.thumbnail }} style={styles.thumbnailImg} />
-                                    ) : (
-                                        <Ionicons name="journal-outline" size={30} color={Colors.primary} />
-                                    )}
-                                </View>
-                                <View style={styles.courseInfo}>
-                                    <Text style={styles.courseTitle}>{item.title}</Text>
-                                    <View style={styles.courseMeta}>
-                                        <Text style={styles.metaText}>{item.category || 'General'}</Text>
-                                        <Text style={styles.metaDot}>•</Text>
-                                        <Text style={styles.metaText}>{item.price === '0' || !item.price ? 'Free' : `$${item.price}`}</Text>
+                                <TouchableOpacity
+                                    style={[styles.courseCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                    activeOpacity={0.7}
+                                    onPress={() => router.push(`/teacher/courses/${item.id}`)}
+                                >
+                                    <View style={[styles.courseIconBox, { backgroundColor: isDark ? colors.surface : '#F0F9FF' }]}>
+                                        {item.thumbnail ? (
+                                            <Image source={{ uri: item.thumbnail }} style={styles.thumbnailImg} />
+                                        ) : (
+                                            <Ionicons name="journal-outline" size={30} color={Colors.primary} />
+                                        )}
                                     </View>
-                                </View>
-                                <Ionicons name="chevron-forward" size={20} color={Colors.grey} />
-                            </TouchableOpacity>
+                                    <View style={styles.courseInfo}>
+                                        <Text style={[styles.courseTitle, { color: colors.text }]}>{item.title}</Text>
+                                        <View style={styles.courseMeta}>
+                                            <Text style={[styles.metaText, { color: colors.textSecondary }]}>{item.category || 'General'}</Text>
+                                            <Text style={[styles.metaDot, { color: colors.textSecondary }]}>•</Text>
+                                            <Text style={[styles.metaText, { color: colors.textSecondary }]}>{item.price === '0' || !item.price ? 'Free' : `$${item.price}`}</Text>
+                                        </View>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                            </Swipeable>
                         )}
                         ListEmptyComponent={
                             <View style={styles.emptyState}>
@@ -188,11 +264,11 @@ export default function TeacherCourseList() {
                         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                         style={styles.modalCentered}
                     >
-                        <View style={styles.modalContentCompact}>
+                        <View style={[styles.modalContentCompact, { backgroundColor: colors.card }]}>
                             <View style={styles.modalHeaderCompact}>
-                                <Text style={styles.modalTitleCompact}>Create Course</Text>
+                                <Text style={[styles.modalTitleCompact, { color: colors.text }]}>Create Course</Text>
                                 <TouchableOpacity onPress={() => setIsCreateModalVisible(false)} style={styles.closeBtn}>
-                                    <Ionicons name="close" size={20} color={Colors.secondary} />
+                                    <Ionicons name="close" size={20} color={colors.text} />
                                 </TouchableOpacity>
                             </View>
 
@@ -202,48 +278,93 @@ export default function TeacherCourseList() {
                                 keyboardShouldPersistTaps="handled"
                                 style={{ maxHeight: 500 }}
                             >
-                                <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
+                                <TouchableOpacity style={[styles.imagePicker, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={pickImage}>
                                     {thumbnail ? (
                                         <Image source={{ uri: thumbnail }} style={styles.previewImage} />
                                     ) : (
                                         <View style={styles.imagePlaceholder}>
-                                            <Ionicons name="image-outline" size={40} color={Colors.grey} />
-                                            <Text style={styles.imagePlaceholderText}>Upload Course Thumbnail</Text>
+                                            <Ionicons name="image-outline" size={40} color={colors.textSecondary} />
+                                            <Text style={[styles.imagePlaceholderText, { color: colors.textSecondary }]}>Upload Course Thumbnail</Text>
                                         </View>
                                     )}
                                 </TouchableOpacity>
                                 <View style={styles.inputGroup}>
-                                    <Text style={styles.label}>Course Title</Text>
+                                    <Text style={[styles.label, { color: colors.text }]}>Course Title</Text>
                                     <TextInput
-                                        style={styles.inputCompact}
+                                        style={[styles.inputCompact, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
                                         placeholder="e.g. Master English Speaking"
-                                        placeholderTextColor={Colors.grey}
+                                        placeholderTextColor={colors.textSecondary}
                                         value={newCourseTitle}
                                         onChangeText={setNewCourseTitle}
                                     />
                                 </View>
 
                                 <View style={styles.inputGroup}>
-                                    <Text style={styles.label}>Category</Text>
+                                    <Text style={[styles.label, { color: colors.text }]}>Category</Text>
                                     <TextInput
-                                        style={styles.inputCompact}
-                                        placeholder="e.g. Language, Art..."
-                                        placeholderTextColor={Colors.grey}
+                                        style={[styles.inputCompact, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                                        placeholder="e.g. Programming, Language..."
+                                        placeholderTextColor={colors.textSecondary}
                                         value={newCourseCategory}
-                                        onChangeText={setNewCourseCategory}
+                                        onFocus={() => setShowCategorySuggestions(true)}
+                                        onChangeText={(text) => {
+                                            setNewCourseCategory(text);
+                                            setShowCategorySuggestions(true);
+                                        }}
                                     />
+                                    {showCategorySuggestions && (
+                                        <View style={{ marginTop: 5, backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.border, maxHeight: 150, zIndex: 1000 }}>
+                                            <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                                                {PREDEFINED_CATEGORIES.filter(c => c.toLowerCase().includes(newCourseCategory.toLowerCase())).map((cat) => (
+                                                    <TouchableOpacity
+                                                        key={cat}
+                                                        style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                                                        onPress={() => {
+                                                            setNewCourseCategory(cat);
+                                                            setShowCategorySuggestions(false);
+                                                        }}
+                                                    >
+                                                        <Text style={{ color: colors.text, fontSize: 14 }}>{cat}</Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </ScrollView>
+                                        </View>
+                                    )}
                                 </View>
 
                                 <View style={styles.inputGroup}>
-                                    <Text style={styles.label}>Price ($)</Text>
+                                    <Text style={[styles.label, { color: colors.text }]}>Description (Max 50 Words)</Text>
                                     <TextInput
-                                        style={styles.inputCompact}
+                                        style={[styles.inputCompact, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text, height: 100, textAlignVertical: 'top' }]}
+                                        placeholder="Add a brief description of what students will learn..."
+                                        placeholderTextColor={colors.textSecondary}
+                                        multiline
+                                        numberOfLines={4}
+                                        value={newCourseDescription}
+                                        onChangeText={setNewCourseDescription}
+                                    />
+                                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 2 }}>
+                                        <Text style={{ fontSize: 11, color: (newCourseDescription.trim() ? newCourseDescription.trim().split(/\s+/).length : 0) > 50 ? '#EF4444' : colors.textSecondary }}>
+                                            Words: {newCourseDescription.trim() ? newCourseDescription.trim().split(/\s+/).length : 0}/50
+                                        </Text>
+                                    </View>
+                                </View>
+
+                                <View style={styles.inputGroup}>
+                                    <Text style={[styles.label, { color: colors.text }]}>Price ($)</Text>
+                                    <TextInput
+                                        style={[styles.inputCompact, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
                                         placeholder="0 for free"
-                                        placeholderTextColor={Colors.grey}
+                                        placeholderTextColor={colors.textSecondary}
                                         keyboardType="numeric"
                                         value={newCoursePrice}
                                         onChangeText={setNewCoursePrice}
                                     />
+                                    {newCoursePrice !== '' && parseFloat(newCoursePrice) > 0 && (
+                                        <Text style={[styles.profitText, { color: colors.textSecondary }]}>
+                                            Your Profit: <Text style={{ fontWeight: 'bold', color: '#16A34A' }}>${(parseFloat(newCoursePrice) * 0.55).toFixed(2)}</Text> (55% share)
+                                        </Text>
+                                    )}
                                 </View>
 
                                 <TouchableOpacity
@@ -262,21 +383,21 @@ export default function TeacherCourseList() {
                     </KeyboardAvoidingView>
                 </View>
             </Modal>
-        </SafeAreaView>
+        </SafeAreaView >
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F9FAFB' },
+    container: { flex: 1 },
     content: { flex: 1, padding: 20 },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    title: { fontSize: 24, fontWeight: 'bold', color: Colors.secondary },
+    title: { fontSize: 24, fontWeight: 'bold' },
     addBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.primary, paddingHorizontal: 15, paddingVertical: 10, borderRadius: 12, gap: 5 },
     addBtnText: { color: Colors.secondary, fontWeight: 'bold', fontSize: 14 },
-    courseCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', padding: 15, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F0F0F0' },
-    courseIconBox: { width: 50, height: 50, borderRadius: 12, backgroundColor: '#F0F9FF', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+    courseCard: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 16, marginBottom: 12, borderWidth: 1 },
+    courseIconBox: { width: 50, height: 50, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
     courseInfo: { flex: 1 },
-    courseTitle: { fontSize: 16, fontWeight: 'bold', color: Colors.secondary },
+    courseTitle: { fontSize: 16, fontWeight: 'bold' },
     courseMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 8 },
     metaText: { fontSize: 12, color: Colors.grey },
     metaDot: { fontSize: 12, color: Colors.grey },
@@ -286,19 +407,36 @@ const styles = StyleSheet.create({
     // Modal
     modalOverlay: { flex: 1, backgroundColor: 'transparent', justifyContent: 'center', alignItems: 'center' },
     modalCentered: { width: '85%', maxWidth: 400, justifyContent: 'center' },
-    modalContentCompact: { backgroundColor: '#FFF', borderRadius: 24, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 10 },
+    modalContentCompact: { borderRadius: 24, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 10 },
     modalHeaderCompact: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingHorizontal: 5 },
-    modalTitleCompact: { fontSize: 18, fontWeight: 'bold', color: Colors.secondary },
+    modalTitleCompact: { fontSize: 18, fontWeight: 'bold' },
     closeBtn: { padding: 5 },
     formScroll: { gap: 15 },
     inputGroup: { gap: 8 },
-    label: { fontSize: 13, fontWeight: '600', color: Colors.secondary, marginLeft: 2 },
-    inputCompact: { backgroundColor: '#F9FAFB', borderRadius: 12, padding: 12, fontSize: 15, borderWidth: 1, borderColor: '#EEE', color: Colors.secondary },
+    label: { fontSize: 13, fontWeight: '600', marginLeft: 2 },
+    inputCompact: { borderRadius: 12, padding: 12, fontSize: 15, borderWidth: 1 },
     submitBtnCompact: { backgroundColor: Colors.primary, padding: 16, borderRadius: 14, alignItems: 'center', marginTop: 10 },
     submitBtnTextCompact: { color: Colors.secondary, fontSize: 16, fontWeight: 'bold' },
-    imagePicker: { width: '100%', height: 180, backgroundColor: '#F9FAFB', borderRadius: 16, borderStyle: 'dashed', borderWidth: 2, borderColor: '#EEE', overflow: 'hidden', marginBottom: 20 },
+    profitText: { fontSize: 12, color: Colors.grey, marginTop: 4, marginLeft: 2 },
+    imagePicker: { width: '100%', height: 180, borderRadius: 16, borderStyle: 'dashed', borderWidth: 2, overflow: 'hidden', marginBottom: 20 },
     imagePlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 10 },
     imagePlaceholderText: { color: Colors.grey, fontSize: 14, fontWeight: '500' },
     previewImage: { width: '100%', height: '100%' },
     thumbnailImg: { width: '100%', height: '100%', borderRadius: 12 },
+    deleteAction: {
+        backgroundColor: '#EF4444',
+        justifyContent: 'center',
+        alignItems: 'center',
+        width: 80,
+        height: '86%',
+        borderRadius: 16,
+        marginVertical: 4,
+        marginLeft: 10,
+    },
+    deleteActionText: {
+        color: '#FFF',
+        fontSize: 12,
+        fontWeight: 'bold',
+        marginTop: 4,
+    },
 });

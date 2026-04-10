@@ -22,6 +22,7 @@ export const courseApi = {
     getCourseDetails: (id: string) => api.post(`/courses/details`, { courseId: id }),
     getEnrolledCourses: (studentId: string) => api.get(`/courses/enrolled/${studentId}`),
     deleteCourse: (id: string) => api.delete(`/courses/${id}`),
+    deleteModule: (courseId: string, moduleId: string) => api.delete(`/courses/module/${courseId}/${moduleId}`),
     getTeacherStudents: (teacherId: string) => api.get(`/courses/teacher-students/${teacherId}`),
 };
 
