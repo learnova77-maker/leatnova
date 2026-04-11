@@ -1,3 +1,4 @@
+import { userApi } from '@/constants/api';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,6 +22,10 @@ interface HeaderProps {
     onBackPress?: () => void;
     showPost?: boolean;
     onPostPress?: () => void;
+    onAvatarPress?: () => void;
+    notificationCount?: number;
+    onNotificationsPress?: () => void;
+    showExplore?: boolean;
 }
 
 export default function AppHeader({
@@ -32,27 +37,39 @@ export default function AppHeader({
     showBack,
     onBackPress,
     showPost,
-    onPostPress
+    onPostPress,
+    onAvatarPress,
+    notificationCount,
+    onNotificationsPress,
+    showExplore
 }: HeaderProps) {
     const router = useRouter();
     const { colors, isDark } = useTheme();
-    const [user, setUser] = useState<{ fullName?: string; photoUrl?: string } | null>(null);
+    const [user, setUser] = useState<{ uid: string; fullName?: string; photoUrl?: string } | null>(null);
+    const [unreadCount, setUnreadCount] = useState(0);
 
     useEffect(() => {
-        const loadUser = async () => {
+        const loadInitialData = async () => {
             try {
                 const userData = await AsyncStorage.getItem('user');
                 if (userData) {
                     const parsedUser = JSON.parse(userData);
                     if (parsedUser && typeof parsedUser === 'object') {
                         setUser(parsedUser);
+
+                        // Fetch unread count
+                        const notifRes = await userApi.getNotifications(parsedUser.uid);
+                        if (notifRes.data.success) {
+                            const unread = notifRes.data.notifications.filter((n: any) => !n.read).length;
+                            setUnreadCount(unread);
+                        }
                     }
                 }
             } catch (err) {
-                console.error('Error loading user in header:', err);
+                console.error('Error loading header data:', err);
             }
         };
-        loadUser();
+        loadInitialData();
     }, []);
 
     const handleProfilePress = () => {
@@ -98,9 +115,14 @@ export default function AppHeader({
                     </TouchableOpacity>
                 )}
 
+                {showExplore && role === 'student' && (
+                    <TouchableOpacity style={styles.actionIcon} onPress={() => router.push('/student/explore')}>
+                        <Ionicons name="compass-outline" size={26} color={colors.text} />
+                    </TouchableOpacity>
+                )}
+
                 <View style={styles.userInfo}>
-                    <Text style={[styles.userName, { color: colors.text }]}>{getFirstName()}</Text>
-                    <TouchableOpacity style={styles.avatarTrigger} onPress={handleProfilePress}>
+                    <TouchableOpacity style={styles.avatarTrigger} onPress={onAvatarPress || handleProfilePress}>
                         <View style={[styles.avatarBox, { borderColor: colors.border }]}>
                             <Image
                                 source={getAvatarSource()}
@@ -116,8 +138,18 @@ export default function AppHeader({
                     </TouchableOpacity>
                 )}
 
-                <TouchableOpacity style={styles.actionIcon}>
-                    <Ionicons name="notifications-outline" size={24} color={colors.text} />
+                <TouchableOpacity
+                    style={styles.actionIcon}
+                    onPress={onNotificationsPress || (() => router.push('/notifications'))}
+                >
+                    <View>
+                        <Ionicons name="notifications-outline" size={24} color={colors.text} />
+                        {(notificationCount || unreadCount) > 0 ? (
+                            <View style={styles.badge}>
+                                <Text style={styles.badgeText}>{notificationCount || unreadCount}</Text>
+                            </View>
+                        ) : null}
+                    </View>
                 </TouchableOpacity>
             </View>
         </View>
@@ -180,5 +212,22 @@ const styles = StyleSheet.create({
     avatarImage: {
         width: '100%',
         height: '100%',
+    },
+    badge: {
+        position: 'absolute',
+        top: -4,
+        right: -4,
+        backgroundColor: '#FF4444',
+        borderRadius: 8,
+        minWidth: 16,
+        height: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 4,
+    },
+    badgeText: {
+        color: '#FFF',
+        fontSize: 10,
+        fontWeight: 'bold',
     },
 });

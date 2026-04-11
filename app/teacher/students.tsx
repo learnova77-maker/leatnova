@@ -1,24 +1,21 @@
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
+import { courseApi } from '@/constants/api';
 import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+    ActivityIndicator,
     FlatList,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    Pressable,
     SafeAreaView,
-    ScrollView,
     StatusBar,
     StyleSheet,
     Text,
-    TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 
 interface Student {
@@ -33,35 +30,39 @@ export default function TeacherStudents() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const { colors, isDark } = useTheme();
     const router = useRouter();
-    const [isModalVisible, setIsModalVisible] = useState(false);
-    const [studentList, setStudentList] = useState<Student[]>([
-        { id: '1', name: 'John Doe', level: 'IELTS Band 6.5', progress: '75%', image: '#FFD700' },
-        { id: '2', name: 'Mei Lin', level: 'HSK 4', progress: '60%', image: '#FF6347' },
-        { id: '3', name: 'Zainab Rashid', level: 'IELTS Band 7.0', progress: '90%', image: '#4682B4' },
-        { id: '4', name: 'Alex Smith', level: 'Beginner Chinese', progress: '40%', image: '#32CD32' },
-    ]);
-
-    const [newName, setNewName] = useState('');
-    const [newLevel, setNewLevel] = useState('');
+    const [studentList, setStudentList] = useState<Student[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
     const randomColors = ['#FFD700', '#FF6347', '#4682B4', '#32CD32', '#9B51E0', '#F2994A', '#EB5757'];
 
-    const handleAddStudent = () => {
-        if (newName.trim() === '' || newLevel.trim() === '') return;
+    useEffect(() => {
+        loadStudents();
+    }, []);
 
-        const newStudent: Student = {
-            id: Math.random().toString(),
-            name: newName,
-            level: newLevel,
-            progress: '0%', // Default for new student
-            image: randomColors[Math.floor(Math.random() * randomColors.length)],
-        };
+    const loadStudents = async () => {
+        try {
+            const userData = await AsyncStorage.getItem('user');
+            if (!userData) return;
+            const user = JSON.parse(userData);
 
-        setStudentList([newStudent, ...studentList]);
-        setNewName('');
-        setNewLevel('');
-        setIsModalVisible(false);
+            const response = await courseApi.getTeacherStudents(user.uid);
+            if (response.data.success) {
+                const fetchedStudents = response.data.students.map((s: any, index: number) => ({
+                    id: s.id,
+                    name: s.name,
+                    level: s.courseTitle || 'Enrolled Student',
+                    progress: 'Active',
+                    image: randomColors[index % randomColors.length]
+                }));
+                setStudentList(fetchedStudents);
+            }
+        } catch (error) {
+            console.error('Error fetching students:', error);
+        } finally {
+            setIsLoading(false);
+        }
     };
+
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -81,103 +82,47 @@ export default function TeacherStudents() {
                             <Text style={[styles.screenTitle, { color: colors.text }]}>My Students</Text>
                             <Text style={[styles.screenSub, { color: colors.textSecondary }]}>Manage your active students</Text>
                         </View>
-                        <TouchableOpacity
-                            style={styles.addButton}
-                            onPress={() => setIsModalVisible(true)}
-                        >
-                            <Ionicons name="add" size={24} color={isDark ? colors.text : Colors.secondary} />
-                            <Text style={styles.addButtonText}>Add</Text>
-                        </TouchableOpacity>
                     </View>
                 </View>
 
-                <FlatList
-                    data={studentList}
-                    keyExtractor={(item) => item.id}
-                    renderItem={({ item }) => (
-                        <View style={[styles.listItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <View style={[styles.avatarCircle, { backgroundColor: item.image }]}>
-                                <Text style={styles.avatarInitial}>{item.name.charAt(0)}</Text>
-                            </View>
-                            <View style={styles.listText}>
-                                <Text style={[styles.itemName, { color: colors.text }]}>{item.name}</Text>
-                                <Text style={[styles.itemSub, { color: colors.textSecondary }]}>{item.level}</Text>
-                            </View>
-                            <View style={styles.progressBox}>
-                                <Text style={styles.progressText}>{item.progress}</Text>
-                            </View>
-                        </View>
-                    )}
-                    contentContainerStyle={styles.listContent}
-                    showsVerticalScrollIndicator={false}
-                />
-            </View>
-
-            {/* Add Student Modal */}
-            <Modal
-                visible={isModalVisible}
-                animationType="fade"
-                transparent={true}
-                onRequestClose={() => setIsModalVisible(false)}
-            >
-                <View style={styles.modalOverlay}>
-                    <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsModalVisible(false)}>
-                        <View style={styles.blurOverlay} />
-                    </Pressable>
-
-                    <KeyboardAvoidingView
-                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                        style={styles.modalContainer}
-                    >
-                        <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <View style={styles.modalHeader}>
-                                <Text style={[styles.modalTitle, { color: colors.text }]}>New Student</Text>
-                                <TouchableOpacity onPress={() => setIsModalVisible(false)}>
-                                    <Ionicons name="close-circle" size={24} color={Colors.grey} />
+                {isLoading ? (
+                    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                        <ActivityIndicator size="large" color={Colors.primary} />
+                        <Text style={{ marginTop: 10, color: colors.textSecondary }}>Fetching your students...</Text>
+                    </View>
+                ) : (
+                    <FlatList
+                        data={studentList}
+                        keyExtractor={(item) => item.id}
+                        ListEmptyComponent={
+                            <View style={styles.emptyContainer}>
+                                <Ionicons name="people-outline" size={60} color={colors.textSecondary} />
+                                <Text style={[styles.emptyText, { color: colors.text }]}>No students found yet.</Text>
+                                <Text style={[styles.emptySub, { color: colors.textSecondary }]}>Students will appear here once they enroll in your courses.</Text>
+                                <TouchableOpacity style={styles.refreshBtn} onPress={loadStudents}>
+                                    <Text style={styles.refreshBtnText}>Check Again</Text>
                                 </TouchableOpacity>
                             </View>
-
-                            <ScrollView
-                                showsVerticalScrollIndicator={false}
-                                keyboardShouldPersistTaps="handled"
-                                contentContainerStyle={styles.formScrollContent}
-                                style={{ maxHeight: 400 }}
-                            >
-                                <View style={styles.form}>
-                                    <View style={styles.inputGroup}>
-                                        <Text style={[styles.label, { color: colors.textSecondary }]}>Full Name</Text>
-                                        <TextInput
-                                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                                            placeholder="John Doe"
-                                            placeholderTextColor="#AAA"
-                                            value={newName}
-                                            onChangeText={setNewName}
-                                        />
-                                    </View>
-
-                                    <View style={styles.inputGroup}>
-                                        <Text style={[styles.label, { color: colors.textSecondary }]}>Course / Level</Text>
-                                        <TextInput
-                                            style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                                            placeholder="IELTS / HSK / English"
-                                            placeholderTextColor="#AAA"
-                                            value={newLevel}
-                                            onChangeText={setNewLevel}
-                                        />
-                                    </View>
-
-                                    <TouchableOpacity
-                                        style={styles.submitButton}
-                                        onPress={handleAddStudent}
-                                    >
-                                        <Text style={styles.submitButtonText}>Add Student</Text>
-                                    </TouchableOpacity>
+                        }
+                        renderItem={({ item }) => (
+                            <View style={[styles.listItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View style={[styles.avatarCircle, { backgroundColor: item.image }]}>
+                                    <Text style={styles.avatarInitial}>{item.name ? item.name.charAt(0) : 'S'}</Text>
                                 </View>
-                            </ScrollView>
-                        </View>
-                    </KeyboardAvoidingView>
-                </View>
-            </Modal>
+                                <View style={styles.listText}>
+                                    <Text style={[styles.itemName, { color: colors.text }]}>{item.name}</Text>
+                                    <Text style={[styles.itemSub, { color: colors.textSecondary }]}>{item.level}</Text>
+                                </View>
+                                <View style={styles.progressBox}>
+                                    <Text style={styles.progressText}>{item.progress}</Text>
+                                </View>
+                            </View>
+                        )}
+                        contentContainerStyle={[styles.listContent, studentList.length === 0 && { flex: 1 }]}
+                        showsVerticalScrollIndicator={false}
+                    />
+                )}
+            </View>
         </SafeAreaView>
     );
 }
@@ -208,19 +153,6 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: Colors.grey,
         marginTop: 4,
-    },
-    addButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: Colors.primary,
-        paddingHorizontal: 15,
-        paddingVertical: 8,
-        borderRadius: 12,
-        gap: 5,
-    },
-    addButtonText: {
-        fontWeight: 'bold',
-        color: Colors.secondary,
     },
     listContent: {
         paddingBottom: 40,
@@ -264,6 +196,34 @@ const styles = StyleSheet.create({
         color: Colors.grey,
         marginTop: 2,
     },
+    emptyContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 40,
+    },
+    emptyText: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        marginTop: 20,
+    },
+    emptySub: {
+        fontSize: 14,
+        textAlign: 'center',
+        marginTop: 10,
+        lineHeight: 20,
+    },
+    refreshBtn: {
+        marginTop: 30,
+        backgroundColor: Colors.primary,
+        paddingHorizontal: 25,
+        paddingVertical: 12,
+        borderRadius: 25,
+    },
+    refreshBtnText: {
+        color: '#1A2744',
+        fontWeight: 'bold',
+    },
     progressBox: {
         paddingHorizontal: 10,
         paddingVertical: 4,
@@ -274,79 +234,5 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: 'bold',
         color: '#2E7D32',
-    },
-    // Modal Styles
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    blurOverlay: {
-        flex: 1,
-    },
-    modalContainer: {
-        width: '85%',
-        maxWidth: 400,
-    },
-    modalContent: {
-        backgroundColor: Colors.white,
-        borderRadius: 24,
-        padding: 24,
-        overflow: 'hidden',
-        // Elevation for Android
-        elevation: 24,
-        // Shadow for iOS
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.2,
-        shadowRadius: 20,
-    },
-    formScrollContent: {
-        paddingBottom: 10,
-    },
-    modalHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 25,
-    },
-    modalTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: Colors.secondary,
-    },
-    form: {
-        gap: 20,
-    },
-    inputGroup: {
-        gap: 8,
-    },
-    label: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: Colors.secondary,
-        marginLeft: 4,
-    },
-    input: {
-        backgroundColor: '#F9FAFB',
-        borderRadius: 16,
-        padding: 16,
-        fontSize: 16,
-        borderWidth: 1,
-        borderColor: '#EEE',
-    },
-    submitButton: {
-        backgroundColor: Colors.secondary,
-        height: 56,
-        borderRadius: 16,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginTop: 10,
-    },
-    submitButtonText: {
-        color: Colors.white,
-        fontSize: 16,
-        fontWeight: 'bold',
     },
 });

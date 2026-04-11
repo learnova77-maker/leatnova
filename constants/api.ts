@@ -30,6 +30,10 @@ export const userApi = {
     getProfile: (uid: string) => api.get(`/users/profile/${uid}`),
     updateProfile: (uid: string, data: any) => api.put(`/users/update/${uid}`, data),
     deleteProfile: (uid: string) => api.delete(`/users/delete/${uid}`),
+    getNotifications: (uid: string) => api.get(`/users/notifications/${uid}`),
+    markNotificationRead: (uid: string, notificationId: string) => api.post('/users/notifications/mark-read', { uid, notificationId }),
+    sendAnnouncement: (data: { teacherId: string, teacherName: string, title: string, message: string }) => api.post('/users/announcements/send', data),
+    getAnnouncementHistory: (teacherId: string) => api.get(`/users/announcements/history/${teacherId}`),
 };
 
 export const liveApi = {
@@ -71,6 +75,15 @@ export const paymentApi = {
     // Admin/Cron
     processPayouts: () => api.post('/payment/process-payouts'),
     getAdminRevenue: () => api.get('/payment/admin/revenue'),
+};
+
+export const assignmentApi = {
+    create: (data: any) => api.post('/assignments/create', data),
+    getTeacherAssignments: (teacherId: string) => api.get(`/assignments/teacher/${teacherId}`),
+    getStudentAssignments: (studentId: string) => api.get(`/assignments/student/${studentId}`),
+    submit: (data: any) => api.post('/assignments/submit', data),
+    getSubmissions: (teacherId: string) => api.get(`/assignments/submissions/${teacherId}`),
+    markComplete: (data: { teacherId: string; assignmentId: string; studentId: string }) => api.post('/assignments/mark-complete', data),
 };
 
 export default api;

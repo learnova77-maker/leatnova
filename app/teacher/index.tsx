@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
+    RefreshControl,
     SafeAreaView,
     ScrollView,
     StatusBar,
@@ -24,30 +25,38 @@ export default function TeacherIndex() {
     const [courses, setCourses] = useState<any[]>([]);
     const [statsData, setStatsData] = useState({ totalCourses: 0, totalStudents: 0, totalHours: 0 });
     const [isLoading, setIsLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const router = useRouter();
     const { colors, isDark } = useTheme();
 
-    useEffect(() => {
-        const loadDashboard = async () => {
-            try {
-                const userData = await AsyncStorage.getItem('user');
-                if (userData) {
-                    const user = JSON.parse(userData);
-                    setTeacherName(user.fullName);
+    const onRefresh = React.useCallback(async () => {
+        setRefreshing(true);
+        await loadDashboard();
+        setRefreshing(false);
+    }, []);
 
-                    // Fetch real dashboard data
-                    const response = await courseApi.getTeacherDashboard(user.uid);
-                    if (response.data.success) {
-                        setCourses(response.data.courses);
-                        setStatsData(response.data.stats);
-                    }
+    const loadDashboard = async () => {
+        try {
+            const userData = await AsyncStorage.getItem('user');
+            if (userData) {
+                const user = JSON.parse(userData);
+                setTeacherName(user.fullName);
+
+                // Fetch real dashboard data
+                const response = await courseApi.getTeacherDashboard(user.uid);
+                if (response.data.success) {
+                    setCourses(response.data.courses);
+                    setStatsData(response.data.stats);
                 }
-            } catch (err) {
-                console.error('Error loading dashboard:', err);
-            } finally {
-                setIsLoading(false);
             }
-        };
+        } catch (err) {
+            console.error('Error loading dashboard:', err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
         loadDashboard();
     }, []);
 
@@ -77,7 +86,13 @@ export default function TeacherIndex() {
                 role="teacher"
             />
 
-            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} tintColor={Colors.primary} />
+                }
+            >
                 <View style={styles.welcomeSection}>
                     <Text style={[styles.hiText, { color: colors.text }]}>Teacher Dashboard</Text>
                     <Text style={[styles.subHiText, { color: colors.textSecondary }]}>Welcome back, {teacherName}</Text>
@@ -108,11 +123,11 @@ export default function TeacherIndex() {
                             {courses.slice(0, 2).map((course) => (
                                 <TouchableOpacity
                                     key={course.id}
-                                    style={styles.courseMiniCard}
+                                    style={[styles.courseMiniCard, { backgroundColor: isDark ? '#1F2937' : '#F9FAFB', borderColor: colors.border }]}
                                     onPress={() => router.push(`/teacher/courses/${course.id}`)}
                                 >
                                     <Ionicons name="book-outline" size={24} color={Colors.primary} />
-                                    <Text style={styles.courseMiniTitle} numberOfLines={1}>{course.title}</Text>
+                                    <Text style={[styles.courseMiniTitle, { color: colors.text }]} numberOfLines={1}>{course.title}</Text>
                                 </TouchableOpacity>
                             ))}
                         </View>
@@ -126,14 +141,14 @@ export default function TeacherIndex() {
                     )}
                 </View>
 
-                <View style={styles.homeworkCard}>
+                <View style={[styles.homeworkCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
                     <View style={styles.hHeader}>
-                        <Text style={styles.hTitle}>Recent Submissions</Text>
+                        <Text style={[styles.hTitle, { color: colors.text }]}>Recent Submissions</Text>
                     </View>
 
                     <View style={styles.emptyState}>
-                        <Ionicons name="documents-outline" size={40} color={Colors.grey} />
-                        <Text style={styles.emptyText}>No recent submissions from students.</Text>
+                        <Ionicons name="documents-outline" size={40} color={colors.textSecondary} />
+                        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No recent submissions from students.</Text>
                     </View>
                 </View>
             </ScrollView>
@@ -144,7 +159,6 @@ export default function TeacherIndex() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F3F4F6',
     },
     content: {
         padding: 20,
@@ -196,7 +210,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     homeworkCard: {
-        backgroundColor: Colors.white,
         borderRadius: 20,
         padding: 20,
         marginBottom: 25,
@@ -263,18 +276,15 @@ const styles = StyleSheet.create({
     },
     courseMiniCard: {
         flex: 1,
-        backgroundColor: '#F9FAFB',
         padding: 15,
         borderRadius: 15,
         alignItems: 'center',
         gap: 8,
         borderWidth: 1,
-        borderColor: '#EEE',
     },
     courseMiniTitle: {
         fontSize: 13,
         fontWeight: 'bold',
-        color: Colors.secondary,
         textAlign: 'center',
     },
     emptyState: {

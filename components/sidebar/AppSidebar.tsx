@@ -24,10 +24,35 @@ interface SidebarProps {
     toggleSidebar: () => void;
 }
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 export default function AppSidebar({ role, isSidebarOpen, toggleSidebar }: SidebarProps) {
     const router = useRouter();
     const pathname = usePathname();
     const { colors, isDark, toggleTheme } = useTheme();
+
+    const handleLogout = async () => {
+        try {
+            // 1. Close sidebar first
+            toggleSidebar();
+
+            // 2. Delay to let animations/modals settle and unmount
+            setTimeout(async () => {
+                // 3. Clear ALL user-related storage
+                await AsyncStorage.multiRemove([
+                    'user',
+                    'recent_video',
+                    'video_progress'
+                ]);
+
+                // 4. Force reset to login
+                router.replace('/(auth)/login');
+            }, 500);
+        } catch (error) {
+            console.error("Logout Error:", error);
+            router.replace('/(auth)/login');
+        }
+    };
 
     const sidebarAnim = useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
     const overlayOpacity = useRef(new Animated.Value(0)).current;
@@ -53,22 +78,22 @@ export default function AppSidebar({ role, isSidebarOpen, toggleSidebar }: Sideb
     const teacherMenu = [
         { id: 'index', path: '/teacher', icon: 'grid-outline', label: 'Dashboard' },
         { id: 'courses', path: '/teacher/courses', icon: 'library-outline', label: 'My Courses' },
+        { id: 'assignments', path: '/teacher/assignments', icon: 'document-text-outline', label: 'Assignments' },
         { id: 'live', path: '/teacher/live', icon: 'videocam-outline', label: 'Go Live' },
         { id: 'students', path: '/teacher/students', icon: 'people-outline', label: 'Students' },
         { id: 'announcements', path: '/teacher/announcements', icon: 'megaphone-outline', label: 'Announcement' },
-        { id: 'lectures', path: '/teacher/lectures', icon: 'play-outline', label: 'Lectures' },
-        { id: 'homework', path: '/teacher/homework', icon: 'book-outline', label: 'Homework' },
-        { id: 'resources', path: '/teacher/resources', icon: 'language-outline', label: 'IELTS Resources' },
+        { id: 'notifications', path: '/notifications', icon: 'notifications-outline', label: 'Notifications' },
         { id: 'social', path: '/teacher/social', icon: 'chatbubbles-outline', label: 'Social Feed' },
+        { id: 'finance', path: '/teacher/finance', icon: 'wallet-outline', label: 'Finance & Earnings' },
     ];
 
     const studentMenu = [
         { id: 'index', path: '/student', icon: 'grid-outline', label: 'Dashboard' },
-        { id: 'videos', path: '/student/videos', icon: 'play-circle-outline', label: 'Video Library' },
+        { id: 'my-courses', path: '/student/my-courses', icon: 'library-outline', label: 'My Courses' },
+        { id: 'homework', path: '/student/homework', icon: 'book-outline', label: 'My Homework' },
         { id: 'live', path: '/student/live', icon: 'videocam-outline', label: 'Live Classes' },
-        { id: 'quizzes', path: '/student/quizzes', icon: 'help-circle-outline', label: 'Quizzes' },
+        { id: 'notifications', path: '/notifications', icon: 'notifications-outline', label: 'Notifications' },
         { id: 'social', path: '/student/social', icon: 'chatbubbles-outline', label: 'Social Feed' },
-        { id: 'progress', path: '/student/progress', icon: 'stats-chart-outline', label: 'Progress' },
     ];
 
     const menu = role === 'teacher' ? teacherMenu : studentMenu;
@@ -150,7 +175,7 @@ export default function AppSidebar({ role, isSidebarOpen, toggleSidebar }: Sideb
                                 <Ionicons
                                     name={isDark ? 'moon' : 'sunny'}
                                     size={20}
-                                    color={isDark ? '#A78BFA' : '#F59E0B'}
+                                    color={isDark ? colors.primary : '#F59E0B'}
                                 />
                                 <Text style={[styles.themeLabel, { color: colors.text }]}>
                                     {isDark ? 'Dark Mode' : 'Light Mode'}
@@ -159,12 +184,12 @@ export default function AppSidebar({ role, isSidebarOpen, toggleSidebar }: Sideb
                             <Switch
                                 value={isDark}
                                 onValueChange={toggleTheme}
-                                trackColor={{ false: '#FDE047', true: '#C4B5FD' }}
-                                thumbColor={isDark ? '#7C3AED' : '#F59E0B'}
+                                trackColor={{ false: '#E2E8F0', true: colors.primary }}
+                                thumbColor={isDark ? '#FFFFFF' : '#F59E0B'}
                             />
                         </View>
 
-                        <TouchableOpacity style={styles.logoutBtn} onPress={() => router.replace('/login')}>
+                        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
                             <Ionicons name="log-out" size={20} color={colors.danger} />
                             <Text style={[styles.logoutLabel, { color: colors.danger }]}>Logout</Text>
                         </TouchableOpacity>

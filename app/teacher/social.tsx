@@ -1,17 +1,18 @@
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
+import CustomVideoPlayer from '@/components/social/CustomVideoPlayer';
 import MarkdownText from '@/components/social/MarkdownText';
 import { socialApi } from '@/constants/api';
 import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    Dimensions,
     FlatList,
     Image,
     KeyboardAvoidingView,
@@ -20,6 +21,7 @@ import {
     Pressable,
     SafeAreaView,
     ScrollView,
+    Share,
     StatusBar,
     StyleSheet,
     Text,
@@ -28,291 +30,198 @@ import {
     View
 } from 'react-native';
 
-interface Comment {
-    id: string;
-    userId: string;
-    userName: string;
-    text: string;
-    createdAt: number;
-}
+const { width } = Dimensions.get('window');
 
-interface Post {
-    id: string;
-    userId: string;
-    userName: string;
-    text: string;
-    mediaUri?: string;
-    mediaType?: 'image' | 'video' | 'document';
-    fileName?: string;
-    likesCount: number;
-    commentsCount: number;
-    createdAt: number;
-    likes?: Record<string, boolean>;
-    comments?: Record<string, Comment>;
-}
+interface Comment { id: string; userId: string; userName: string; text: string; createdAt: number; }
+interface Post { id: string; userId: string; userName: string; text: string; mediaUri?: string; mediaType?: 'image' | 'video' | 'document'; fileName?: string; likesCount: number; commentsCount: number; createdAt: number; likes?: Record<string, boolean>; comments?: Record<string, Comment>; }
+interface Notification { id: string; type: 'like' | 'comment'; postId: string; senderId: string; senderName: string; text?: string; createdAt: number; read: boolean; }
 
 export default function TeacherSocial() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const { colors, isDark } = useTheme();
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [isCommentModalVisible, setIsCommentModalVisible] = useState(false);
+    const [isNotifModalVisible, setIsNotifModalVisible] = useState(false);
+    const [isReportModalVisible, setIsReportModalVisible] = useState(false);
+    const [isOptionsMenuVisible, setIsOptionsMenuVisible] = useState(false);
+
     const [posts, setPosts] = useState<Post[]>([]);
+    const [notifications, setNotifications] = useState<Notification[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isPosting, setIsPosting] = useState(false);
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+    const [filterByMe, setFilterByMe] = useState(false);
 
     const [newPostText, setNewPostText] = useState('');
-    const [newCommentText, setNewCommentText] = useState('');
+    const [selectedMedia, setSelectedMedia] = useState<{ uri: string, type: 'image' | 'video' } | null>(null);
+    const [inlineCommentState, setInlineCommentState] = useState<Record<string, string>>({});
+    const [reportType, setReportType] = useState('Spam');
+    const [reportDesc, setReportDesc] = useState('');
 
-    const [mediaUri, setMediaUri] = useState<string | null>(null);
-    const [mediaType, setMediaType] = useState<'image' | 'video' | 'document' | null>(null);
-    const [fileName, setFileName] = useState<string | null>(null);
+    // Auto-play tracking
+    const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
+    const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+        if (viewableItems && viewableItems.length > 0) {
+            setVisiblePostId(viewableItems[0].item.id);
+        }
+    }).current;
+    const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
 
-    useEffect(() => {
-        loadData();
-    }, []);
+    useEffect(() => { loadData(); }, []);
+
+    const formatPostDate = (timestamp: number) => {
+        if (!timestamp) return 'Recently';
+        const now = Date.now();
+        const diffInHours = (now - timestamp) / (1000 * 60 * 60);
+
+        if (diffInHours < 24) {
+            if (diffInHours < 1) return 'Just now';
+            return `${Math.floor(diffInHours)}h ago`;
+        } else if (diffInHours < 48) {
+            return 'Yesterday';
+        } else {
+            const d = new Date(timestamp);
+            return d.toLocaleDateString();
+        }
+    };
 
     const loadData = async () => {
         try {
             const userData = await AsyncStorage.getItem('user');
-            if (userData) setCurrentUser(JSON.parse(userData));
-
-            const response = await socialApi.getPosts();
-            if (response.data.success) {
-                setPosts(response.data.posts);
+            if (userData) {
+                const parsed = JSON.parse(userData);
+                setCurrentUser(parsed);
+                loadNotifications(parsed.uid);
             }
-        } catch (err) {
-            console.error('Error loading social feed:', err);
-        } finally {
-            setIsLoading(false);
-        }
+            const response = await socialApi.getPosts();
+            if (response.data.success) setPosts(response.data.posts);
+        } catch (err) { console.error('Error:', err); } finally { setIsLoading(false); }
     };
 
-    const pickMedia = async () => {
+    const loadNotifications = async (userId: string) => {
+        try {
+            const response = await socialApi.getNotifications(userId);
+            if (response.data.success) setNotifications(response.data.notifications);
+        } catch (err) { }
+    };
+
+    const pickMedia = async (type: 'image' | 'video') => {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) return Alert.alert('Permission Denied', 'Gallery access is required.');
+
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images', 'videos'],
+            mediaTypes: type === 'image' ? ImagePicker.MediaTypeOptions.Images : ImagePicker.MediaTypeOptions.Videos,
             allowsEditing: true,
-            quality: 0.6,
-            base64: true,
+            quality: 1,
         });
 
         if (!result.canceled) {
-            const isVideo = result.assets[0].type === 'video';
-            const base64Prefix = isVideo ? 'data:video/mp4;base64,' : 'data:image/jpeg;base64,';
-
-            const uriToSave = result.assets[0].base64 ? (base64Prefix + result.assets[0].base64) : result.assets[0].uri;
-
-            setMediaUri(uriToSave);
-            setMediaType(isVideo ? 'video' : 'image');
-            setFileName(isVideo ? 'Attached Video' : 'Attached Image');
-        }
-    };
-
-    const pickDocument = async () => {
-        try {
-            const result = await DocumentPicker.getDocumentAsync({});
-            if (!result.canceled && result.assets.length > 0) {
-                setMediaUri(result.assets[0].uri);
-                setMediaType('document');
-                setFileName(result.assets[0].name);
-            }
-        } catch (e) {
-            console.log('Document picking failed', e);
+            setSelectedMedia({ uri: result.assets[0].uri, type });
         }
     };
 
     const handleAddPost = async () => {
-        if ((!newPostText.trim() && !mediaUri) || !currentUser || isPosting) return;
-
+        if (!newPostText.trim() && !selectedMedia) return;
+        if (!currentUser || isPosting) return;
         setIsPosting(true);
         try {
             const response = await socialApi.createPost({
                 userId: currentUser.uid,
                 userName: currentUser.fullName,
                 text: newPostText.trim(),
-                mediaUri: mediaUri || undefined,
-                mediaType: mediaType || undefined,
-                fileName: fileName || undefined
+                mediaUri: selectedMedia?.uri,
+                mediaType: selectedMedia?.type
             });
-
             if (response.data.success) {
                 setNewPostText('');
-                setMediaUri(null);
-                setMediaType(null);
-                setFileName(null);
+                setSelectedMedia(null);
                 setIsModalVisible(false);
-                loadData(); // Refresh feed
+                loadData();
             }
-        } catch (err) {
-            Alert.alert('Error', 'Failed to share post.');
-        } finally {
-            setIsPosting(false);
-        }
+        } catch (err) { Alert.alert('Error', 'Failed to share.'); } finally { setIsPosting(false); }
     };
 
     const handleDeletePost = (postId: string) => {
-        Alert.alert(
-            "Delete Post",
-            "Are you sure you want to delete this post?",
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "Delete",
-                    style: "destructive",
-                    onPress: async () => {
-                        try {
-                            const response = await socialApi.deletePost(postId);
-                            if (response.data.success) {
-                                loadData();
-                            }
-                        } catch (err) {
-                            Alert.alert("Error", "Failed to delete post.");
-                        }
-                    }
-                }
-            ]
-        );
+        setIsOptionsMenuVisible(false);
+        Alert.alert("Delete Post", "Are you sure?", [
+            { text: "Cancel" },
+            { text: "Delete", style: "destructive", onPress: async () => { try { await socialApi.deletePost(postId); loadData(); } catch (e) { Alert.alert("Error", "Failed to delete."); } } }
+        ]);
+    };
+
+    const handleReportPost = async () => {
+        if (!selectedPost || !currentUser) return;
+        try {
+            const resp = await socialApi.reportPost({ postId: selectedPost.id, userId: currentUser.uid, userName: currentUser.fullName, reportType, description: reportDesc });
+            if (resp.data.success) { Alert.alert("Success", "Report submitted."); setIsReportModalVisible(false); setReportDesc(''); }
+        } catch (e) { Alert.alert("Error", "Failed to report."); }
+    };
+
+    const handleSharePost = async (post: Post) => {
+        try {
+            const message = `${post.userName} on Learnova:\n\n${post.text || 'Look at this!'}`;
+            await Share.share({ message });
+        } catch (e) { }
     };
 
     const handleLikePost = async (postId: string) => {
         if (!currentUser) return;
+        try { const resp = await socialApi.likePost({ postId, userId: currentUser.uid, userName: currentUser.fullName }); if (resp.data.success) loadData(); } catch (e) { }
+    };
 
+    const handleInlineComment = async (postId: string) => {
+        const text = inlineCommentState[postId];
+        if (!text?.trim() || !currentUser) return;
         try {
-            const response = await socialApi.likePost({
-                postId,
-                userId: currentUser.uid,
-            });
-
-            if (response.data.success) {
-                loadData();
-            }
-        } catch (err) {
-            console.error('Like error:', err);
-        }
+            const resp = await socialApi.commentPost({ postId, userId: currentUser.uid, userName: currentUser.fullName, text: text.trim() });
+            if (resp.data.success) { setInlineCommentState({ ...inlineCommentState, [postId]: '' }); loadData(); }
+        } catch (e) { }
     };
 
-    const handleAddComment = async () => {
-        if (newCommentText.trim() === '' || !currentUser || !selectedPost) return;
-
+    const handleMarkAllRead = async () => {
+        if (!currentUser) return;
         try {
-            const response = await socialApi.commentPost({
-                postId: selectedPost.id,
-                userId: currentUser.uid,
-                userName: currentUser.fullName,
-                text: newCommentText.trim(),
-            });
-
-            if (response.data.success) {
-                setNewCommentText('');
-                const updatedResponse = await socialApi.getPosts();
-                if (updatedResponse.data.success) {
-                    setPosts(updatedResponse.data.posts);
-                    const freshPost = updatedResponse.data.posts.find((p: Post) => p.id === selectedPost.id);
-                    if (freshPost) setSelectedPost(freshPost);
-                }
-            }
-        } catch (err) {
-            Alert.alert('Error', 'Failed to add comment.');
-        }
+            await socialApi.markNotificationsRead(currentUser.uid);
+            loadData();
+        } catch (e) { }
     };
 
-    const openComments = (post: Post) => {
-        setSelectedPost(post);
-        setIsCommentModalVisible(true);
-    };
-
-    const formatTime = (timestamp: number) => {
-        const diff = Date.now() - timestamp;
-        const mins = Math.floor(diff / 60000);
-        if (mins < 1) return 'Just now';
-
-        const hours = Math.floor(mins / 60);
-        if (hours < 1) return `${mins}m ago`;
-
-        const days = Math.floor(hours / 24);
-        if (days < 1) return `${hours}h ago`;
-
-        if (days < 30) {
-            return days === 1 ? '1 day ago' : `${days} days ago`;
-        }
-
-        const months = Math.floor(days / 30);
-        if (months < 12) {
-            return months === 1 ? '1 month ago' : `${months} months ago`;
-        }
-
-        const date = new Date(timestamp);
-        return date.toLocaleDateString();
+    const handleDeleteNotification = async (notifId: string) => {
+        if (!currentUser) return;
+        try {
+            await socialApi.deleteNotification(currentUser.uid, notifId);
+            loadData();
+        } catch (e) { }
     };
 
     const renderPost = ({ item }: { item: Post }) => {
         const isLiked = item.likes && currentUser && item.likes[currentUser.uid];
-        const isOwner = currentUser && item.userId === currentUser.uid;
-
         return (
-            <Pressable
-                onLongPress={() => isOwner && handleDeletePost(item.id)}
-                style={({ pressed }) => [
-                    styles.postCard,
-                    { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.9 : 1 }
-                ]}
-            >
+            <View style={[styles.fullScreenPost, { backgroundColor: colors.card }]}>
                 <View style={styles.postHeader}>
-                    <View style={[styles.avatar, { backgroundColor: isDark ? '#1A2744' : '#F0F9FF' }]}>
-                        <Text style={styles.avatarText}>{item.userName.charAt(0)}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                        <Text style={[styles.userName, { color: colors.text }]}>{item.userName}</Text>
-                        <Text style={[styles.postTime, { color: colors.textSecondary }]}>{formatTime(item.createdAt)}</Text>
-                    </View>
-                    {isOwner && <Ionicons name="ellipsis-vertical" size={18} color={colors.textSecondary} />}
+                    <View style={[styles.avatar, { backgroundColor: Colors.primary }]}><Text style={styles.avatarText}>{item.userName.charAt(0)}</Text></View>
+                    <View style={{ flex: 1 }}><Text style={[styles.userName, { color: colors.text }]}>{item.userName}</Text><Text style={[styles.postTime, { color: colors.textSecondary }]}>{formatPostDate(item.createdAt)}</Text></View>
+                    <TouchableOpacity onPress={() => { setSelectedPost(item); setIsOptionsMenuVisible(true); }}><Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} /></TouchableOpacity>
                 </View>
-
-                {item.text ? (
-                    <MarkdownText content={item.text} textColor={colors.text} />
-                ) : null}
-
-                {item.mediaUri && item.mediaType === 'image' && (
-                    <Image source={{ uri: item.mediaUri }} style={styles.postImage} />
+                <View style={{ paddingHorizontal: 15, paddingBottom: 10 }}>{item.text ? <MarkdownText content={item.text} textColor={colors.text} /> : null}</View>
+                {item.mediaUri && item.mediaType === 'image' && <Image source={{ uri: item.mediaUri }} style={styles.fullWidthPostImage} resizeMode="contain" />}
+                {item.mediaUri && item.mediaType === 'video' && (
+                    <CustomVideoPlayer uri={item.mediaUri} shouldPlay={visiblePostId === item.id} />
                 )}
-                {item.mediaUri && (item.mediaType === 'video' || item.mediaType === 'document') && (
-                    <View style={[styles.attachmentBox, { backgroundColor: isDark ? '#1A1A2E' : '#F0F9FF' }]}>
-                        <Ionicons name={item.mediaType === 'video' ? 'videocam' : 'document-text'} size={24} color={Colors.primary} />
-                        <Text style={[styles.attachmentText, { color: colors.text }]} numberOfLines={1}>
-                            {item.fileName || 'Attached File'}
-                        </Text>
-                    </View>
-                )}
-
                 <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
                 <View style={styles.postFooter}>
-                    <TouchableOpacity
-                        style={styles.footerAction}
-                        onPress={() => handleLikePost(item.id)}
-                    >
-                        <Ionicons
-                            name={isLiked ? "heart" : "heart-outline"}
-                            size={20}
-                            color={isLiked ? "#FF4444" : colors.textSecondary}
-                        />
-                        <Text style={[styles.footerText, { color: isLiked ? "#FF4444" : colors.textSecondary }]}>
-                            {item.likesCount || 0}
-                        </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.footerAction}
-                        onPress={() => openComments(item)}
-                    >
-                        <Ionicons name="chatbubble-outline" size={18} color={colors.textSecondary} />
-                        <Text style={[styles.footerText, { color: colors.textSecondary }]}>
-                            {item.commentsCount || 0}
-                        </Text>
+                    <TouchableOpacity style={styles.footerAction} onPress={() => handleLikePost(item.id)}><Ionicons name={isLiked ? "heart" : "heart-outline"} size={22} color={isLiked ? "#FF4444" : colors.text} /><Text style={[styles.footerText, { color: isLiked ? "#FF4444" : colors.text }]}>{item.likesCount || 0}</Text></TouchableOpacity>
+                    <TouchableOpacity style={styles.footerAction} onPress={() => { setSelectedPost(item); setIsCommentModalVisible(true); }}><Ionicons name="chatbubble-outline" size={20} color={colors.text} /><Text style={[styles.footerText, { color: colors.text }]}>{item.commentsCount || 0}</Text></TouchableOpacity>
+                    <TouchableOpacity style={styles.footerAction} onPress={() => handleSharePost(item)}><Ionicons name="share-social-outline" size={20} color={colors.text} /><Text style={[styles.footerText, { color: colors.text }]}>Share</Text></TouchableOpacity>
+                </View>
+                <View style={[styles.inlineCommentRow, { borderTopColor: colors.border }]}>
+                    <TextInput style={[styles.inlineInput, { backgroundColor: isDark ? colors.background : '#F0F2F5', color: colors.text }]} placeholder="Write a comment..." placeholderTextColor={colors.textSecondary} value={inlineCommentState[item.id] || ''} onChangeText={(txt) => setInlineCommentState({ ...inlineCommentState, [item.id]: txt })} onSubmitEditing={() => handleInlineComment(item.id)} />
+                    <TouchableOpacity onPress={() => handleInlineComment(item.id)} style={[styles.sendBtn, { backgroundColor: Colors.primary }]}>
+                        <Ionicons name="send" size={16} color="#FFF" />
                     </TouchableOpacity>
                 </View>
-            </Pressable>
+            </View>
         );
     };
 
@@ -320,169 +229,125 @@ export default function TeacherSocial() {
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <AppSidebar role="teacher" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
-            <AppHeader
-                title="Learnova"
-                toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-                showPost={true}
-                onPostPress={() => setIsModalVisible(true)}
-            />
-
-            <View style={styles.screenContainer}>
-                {isLoading ? (
-                    <View style={styles.centerContent}>
-                        <ActivityIndicator size="large" color={Colors.primary} />
-                    </View>
-                ) : (
-                    <FlatList
-                        data={posts}
-                        keyExtractor={(item) => item.id}
-                        renderItem={renderPost}
-                        contentContainerStyle={styles.listContent}
-                        showsVerticalScrollIndicator={false}
-                        ListHeaderComponent={<View style={{ height: 10 }} />}
-                        ListEmptyComponent={
-                            <View style={styles.emptyContent}>
-                                <Ionicons name="people-outline" size={60} color={colors.border} />
-                                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No posts yet. Be the first to share!</Text>
-                            </View>
-                        }
-                        refreshing={isLoading}
-                        onRefresh={loadData}
-                    />
+            <AppHeader title="Learnova" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} showPost={true} onPostPress={() => setIsModalVisible(true)} onAvatarPress={() => setFilterByMe(!filterByMe)} notificationCount={notifications.length} onNotificationsPress={() => setIsNotifModalVisible(true)} />
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
+                {filterByMe && (
+                    <View style={[styles.profileFilterHeader, { backgroundColor: colors.card, borderBottomColor: colors.border }]}><Ionicons name="person-circle-outline" size={24} color={Colors.primary} /><Text style={[styles.profileFilterTitle, { color: colors.text }]}>My Profile Activity</Text></View>
                 )}
-            </View>
+                <FlatList
+                    data={filterByMe ? posts.filter(p => p.userId === currentUser?.uid) : posts}
+                    keyExtractor={(item) => item.id}
+                    renderItem={renderPost}
+                    showsVerticalScrollIndicator={false}
+                    refreshing={isLoading}
+                    onRefresh={loadData}
+                    keyboardShouldPersistTaps="handled"
+                    contentContainerStyle={{ paddingBottom: 20 }}
+                    onViewableItemsChanged={onViewableItemsChanged}
+                    viewabilityConfig={viewabilityConfig}
+                />
+            </KeyboardAvoidingView>
 
+            {/* Create Post Modal */}
             <Modal visible={isModalVisible} animationType="fade" transparent={true}>
-                <View style={styles.modalOverlay}>
-                    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ width: '100%', justifyContent: 'center', alignItems: 'center' }}>
-                        <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-                            <View style={styles.modalHeader}>
-                                <TouchableOpacity onPress={() => !isPosting && setIsModalVisible(false)}>
-                                    <Text style={{ color: colors.textSecondary, fontSize: 16 }}>Cancel</Text>
-                                </TouchableOpacity>
-                                <Text style={[styles.modalTitle, { color: colors.text }]}>New Post</Text>
-                                <TouchableOpacity
-                                    style={[styles.shareBtn, ((!newPostText.trim() && !mediaUri) || isPosting) && { opacity: 0.5 }]}
-                                    disabled={(!newPostText.trim() && !mediaUri) || isPosting}
-                                    onPress={handleAddPost}
-                                >
-                                    {isPosting ? (
-                                        <ActivityIndicator size="small" color="#FFF" />
-                                    ) : (
-                                        <Text style={styles.shareBtnText}>Post</Text>
-                                    )}
-                                </TouchableOpacity>
-                            </View>
-
-                            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 200, minHeight: 100 }}>
-                                <TextInput
-                                    style={[styles.postInput, { color: colors.text }]}
-                                    placeholder="What's on your mind?"
-                                    placeholderTextColor={colors.textSecondary}
-                                    multiline
-                                    autoFocus
-                                    value={newPostText}
-                                    onChangeText={setNewPostText}
-                                    editable={!isPosting}
-                                />
-
-                                {mediaUri && mediaType === 'image' && (
-                                    <Image source={{ uri: mediaUri }} style={styles.previewImage} />
-                                )}
-                                {mediaUri && (mediaType === 'video' || mediaType === 'document') && (
-                                    <View style={styles.previewBox}>
-                                        <Ionicons name={mediaType === 'video' ? 'videocam' : 'document'} size={24} color={Colors.primary} />
-                                        <Text style={{ marginLeft: 10, color: colors.text, flex: 1 }} numberOfLines={1}>{fileName}</Text>
-                                        {!isPosting && (
-                                            <TouchableOpacity onPress={() => { setMediaUri(null); setMediaType(null); setFileName(null); }}>
-                                                <Ionicons name="close-circle" size={20} color="red" />
-                                            </TouchableOpacity>
-                                        )}
-                                    </View>
-                                )}
-                            </ScrollView>
-
-                            <View style={[styles.mediaToolsRow, { borderTopColor: colors.border }]}>
-                                <TouchableOpacity style={styles.mediaBtn} onPress={pickMedia} disabled={isPosting}>
-                                    <Text style={{ color: Colors.primary, fontSize: 14, fontWeight: 'bold' }}>Attach Photo / Video</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={styles.mediaBtn} onPress={pickDocument} disabled={isPosting}>
-                                    <Text style={{ color: Colors.primary, fontSize: 14, fontWeight: 'bold' }}>Attach Document</Text>
-                                </TouchableOpacity>
-                            </View>
+                <Pressable style={styles.modalOverlay} onPress={() => setIsModalVisible(false)}>
+                    <View style={[styles.modalContent, { backgroundColor: colors.card, alignSelf: 'center', width: '90%', minHeight: 400, borderRadius: 25 }]} onStartShouldSetResponder={() => true}>
+                        <View style={styles.modalHeader}>
+                            <TouchableOpacity onPress={() => { setIsModalVisible(false); setSelectedMedia(null); }}><Text style={{ color: colors.textSecondary }}>Cancel</Text></TouchableOpacity>
+                            <Text style={[styles.modalTitle, { color: colors.text }]}>Create Post</Text>
+                            <TouchableOpacity onPress={handleAddPost} disabled={isPosting}>
+                                {isPosting ? <ActivityIndicator size="small" color={Colors.primary} /> : <Text style={{ color: Colors.primary, fontWeight: 'bold' }}>Post</Text>}
+                            </TouchableOpacity>
                         </View>
-                    </KeyboardAvoidingView>
-                </View>
+                        <TextInput style={[styles.postInput, { color: colors.text, flex: 1 }]} placeholder="What's update?" placeholderTextColor={colors.textSecondary} multiline value={newPostText} onChangeText={setNewPostText} />
+                        {selectedMedia && (
+                            <View style={styles.previewContainer}>
+                                {selectedMedia.type === 'image' ? <Image source={{ uri: selectedMedia.uri }} style={styles.mediaPreview} /> : <View style={[styles.mediaPreview, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}><Ionicons name="videocam" size={40} color="#FFF" /></View>}
+                                <TouchableOpacity style={styles.removeMediaBtn} onPress={() => setSelectedMedia(null)}><Ionicons name="close-circle" size={24} color="#FF4444" /></TouchableOpacity>
+                            </View>
+                        )}
+                        <View style={[styles.mediaOptionsRow, { borderTopWidth: 1, borderTopColor: colors.border }]}>
+                            <TouchableOpacity style={styles.mediaOptBtn} onPress={() => pickMedia('image')}><Ionicons name="image-outline" size={26} color="#4CAF50" /><Text style={{ color: colors.textSecondary, fontSize: 12 }}>Photo</Text></TouchableOpacity>
+                            <TouchableOpacity style={styles.mediaOptBtn} onPress={() => pickMedia('video')}><Ionicons name="videocam-outline" size={26} color="#F44336" /><Text style={{ color: colors.textSecondary, fontSize: 12 }}>Video</Text></TouchableOpacity>
+                        </View>
+                    </View>
+                </Pressable>
             </Modal>
 
+            {/* Comments List Modal */}
             <Modal visible={isCommentModalVisible} animationType="slide" transparent={true}>
-                <View style={styles.modalOverlay}>
-                    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ width: '100%', flex: 1, justifyContent: 'flex-end' }}>
-                        <View style={[styles.commentModalContent, { backgroundColor: colors.card }]}>
-                            <View style={styles.modalHeader}>
-                                <TouchableOpacity onPress={() => setIsCommentModalVisible(false)}>
-                                    <Ionicons name="chevron-down" size={28} color={colors.text} />
-                                </TouchableOpacity>
-                                <Text style={[styles.modalTitle, { color: colors.text }]}>Comments</Text>
-                                <View style={{ width: 28 }} />
-                            </View>
-
-                            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-                                {selectedPost?.comments ? (
-                                    Object.keys(selectedPost.comments).map(cKey => {
-                                        const comment = selectedPost.comments![cKey];
-                                        return (
-                                            <View key={cKey} style={styles.commentItem}>
-                                                <View style={[styles.avatarSmall, { backgroundColor: isDark ? '#1A2744' : '#F0F9FF' }]}>
-                                                    <Text style={styles.avatarTextSmall}>{comment.userName.charAt(0)}</Text>
-                                                </View>
-                                                <View style={styles.commentBody}>
-                                                    <View style={styles.commentHeader}>
-                                                        <Text style={[styles.commentUserName, { color: colors.text }]}>{comment.userName}</Text>
-                                                        <Text style={[styles.commentTime, { color: colors.textSecondary }]}>{formatTime(comment.createdAt)}</Text>
-                                                    </View>
-                                                    <Text style={[styles.commentText, { color: colors.textSecondary }]}>
-                                                        {comment.text.split(' ').map((word, i) => (
-                                                            word.startsWith('@') ? (
-                                                                <Text key={i} style={{ color: Colors.primary, fontWeight: 'bold' }}>{word} </Text>
-                                                            ) : (
-                                                                word + ' '
-                                                            )
-                                                        ))}
-                                                    </Text>
-                                                </View>
-                                            </View>
-                                        );
-                                    })
-                                ) : (
-                                    <View style={styles.emptyComments}>
-                                        <Text style={{ color: colors.textSecondary }}>No comments yet.</Text>
-                                    </View>
-                                )}
-                            </ScrollView>
-
-                            <View style={[styles.commentInputRow, { borderTopColor: colors.border }]}>
-                                <TextInput
-                                    style={[styles.commentInput, { backgroundColor: isDark ? colors.background : '#F0F0F0', color: colors.text }]}
-                                    placeholder="Add a comment... (use @ to mention)"
-                                    placeholderTextColor={colors.textSecondary}
-                                    value={newCommentText}
-                                    onChangeText={setNewCommentText}
-                                />
-                                <TouchableOpacity
-                                    onPress={handleAddComment}
-                                    disabled={!newCommentText.trim()}
-                                >
-                                    <Ionicons
-                                        name="send"
-                                        size={24}
-                                        color={newCommentText.trim() ? Colors.primary : colors.textSecondary}
-                                    />
-                                </TouchableOpacity>
-                            </View>
+                <Pressable style={styles.modalOverlay} onPress={() => setIsCommentModalVisible(false)}>
+                    <View style={[styles.commentModalFull, { backgroundColor: colors.card }]} onStartShouldSetResponder={() => true}>
+                        <View style={styles.modalHeader}>
+                            <TouchableOpacity onPress={() => setIsCommentModalVisible(false)}><Ionicons name="close" size={24} color={colors.text} /></TouchableOpacity>
+                            <Text style={[styles.modalTitle, { color: colors.text }]}>All Comments</Text>
+                            <View style={{ width: 24 }} />
                         </View>
-                    </KeyboardAvoidingView>
-                </View>
+                        <ScrollView>
+                            {selectedPost?.comments ? Object.keys(selectedPost.comments).map(k => {
+                                const c = selectedPost.comments![k];
+                                return (
+                                    <View key={k} style={styles.commentItem}>
+                                        <View style={[styles.tinyAvatar, { backgroundColor: Colors.primary }]}><Text style={[styles.tinyAvatarText, { color: '#FFF' }]}>{c.userName.charAt(0)}</Text></View>
+                                        <View style={[styles.commentBubble, { backgroundColor: isDark ? '#333' : '#F0F2F5' }]}>
+                                            <Text style={[styles.commentName, { color: colors.text }]}>{c.userName}</Text>
+                                            <Text style={{ color: colors.text }}>{c.text}</Text>
+                                        </View>
+                                    </View>
+                                );
+                            }) : <View style={{ alignItems: 'center', padding: 20 }}><Text style={{ color: colors.textSecondary }}>No comments yet.</Text></View>}
+                        </ScrollView>
+                    </View>
+                </Pressable>
+            </Modal>
+
+            <Modal visible={isOptionsMenuVisible} animationType="fade" transparent={true}><Pressable style={[styles.modalOverlay, { width: '100%' }]} onPress={() => setIsOptionsMenuVisible(false)}><View style={[styles.menuContent, { backgroundColor: colors.card }]} onStartShouldSetResponder={() => true}><TouchableOpacity style={styles.menuItem} onPress={() => { setIsOptionsMenuVisible(false); setIsReportModalVisible(true); }}><Ionicons name="flag-outline" size={24} color={colors.text} /><Text style={[styles.menuText, { color: colors.text }]}>Report Post</Text></TouchableOpacity>{selectedPost && currentUser && selectedPost.userId === currentUser.uid && <TouchableOpacity style={styles.menuItem} onPress={() => handleDeletePost(selectedPost.id)}><Ionicons name="trash-outline" size={24} color="#FF4444" /><Text style={[styles.menuText, { color: '#FF4444' }]}>Delete Post</Text></TouchableOpacity>}</View></Pressable></Modal>
+            <Modal visible={isReportModalVisible} animationType="slide" transparent={true}><Pressable style={styles.modalOverlay} onPress={() => setIsReportModalVisible(false)}><View style={[styles.reportContent, { backgroundColor: colors.card }]} onStartShouldSetResponder={() => true}><Text style={[styles.modalTitle, { color: colors.text, marginBottom: 20 }]}>Report</Text><View style={styles.reportTypes}>{['Spam', 'Harassment', 'False Info', 'Inappropriate'].map(type => (<TouchableOpacity key={type} style={[styles.typeBtn, reportType === type && { backgroundColor: Colors.primary }]} onPress={() => setReportType(type)}><Text style={[styles.typeText, { color: reportType === type ? '#FFF' : colors.text }]}>{type}</Text></TouchableOpacity>))}</View><TextInput style={[styles.reportInput, { backgroundColor: isDark ? '#333' : '#F5F5F5', color: colors.text }]} placeholder="Reason..." multiline value={reportDesc} onChangeText={setReportDesc} /><View style={styles.modalFooter}><TouchableOpacity onPress={() => setIsReportModalVisible(false)}><Text style={{ color: colors.textSecondary }}>Cancel</Text></TouchableOpacity><TouchableOpacity style={[styles.submitBtn, { backgroundColor: Colors.primary }]} onPress={handleReportPost}><Text style={{ color: '#FFF' }}>Submit</Text></TouchableOpacity></View></View></Pressable></Modal>
+
+            {/* Notifications Modal */}
+            <Modal visible={isNotifModalVisible} animationType="fade" transparent={true}>
+                <Pressable style={styles.modalOverlay} onPress={() => setIsNotifModalVisible(false)}>
+                    <View style={[styles.commentModalFull, { backgroundColor: colors.card, height: '60%' }]} onStartShouldSetResponder={() => true}>
+                        <View style={styles.modalHeader}>
+                            <TouchableOpacity onPress={() => setIsNotifModalVisible(false)}><Ionicons name="close" size={24} color={colors.text} /></TouchableOpacity>
+                            <Text style={[styles.modalTitle, { color: colors.text }]}>Notifications</Text>
+                            <TouchableOpacity onPress={handleMarkAllRead}><Ionicons name="checkmark-done" size={26} color={Colors.primary} /></TouchableOpacity>
+                        </View>
+                        <ScrollView showsVerticalScrollIndicator={false}>
+                            {notifications.length > 0 ? notifications.map(notif => {
+                                const isLike = notif.type === 'like';
+                                return (
+                                    <TouchableOpacity
+                                        key={notif.id}
+                                        style={[styles.commentItem, { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border, opacity: notif.read ? 0.6 : 1 }]}
+                                        onPress={() => {
+                                            setIsNotifModalVisible(false);
+                                            const targetPost = posts.find(p => p.id === notif.postId);
+                                            if (targetPost) {
+                                                setSelectedPost(targetPost);
+                                                setIsCommentModalVisible(true);
+                                            }
+                                        }}
+                                    >
+                                        <View style={[styles.tinyAvatar, { backgroundColor: isLike ? '#FF4444' : Colors.primary }]}>
+                                            <Ionicons name={isLike ? "heart" : "chatbubble"} size={14} color="#FFF" />
+                                        </View>
+                                        <View style={{ flex: 1, marginLeft: 10 }}>
+                                            <Text style={[{ color: colors.text, fontSize: 13 }]}>
+                                                <Text style={{ fontWeight: 'bold' }}>{notif.senderName || 'Someone'}</Text>
+                                                {isLike ? ' liked your post.' : ` commented: "${notif.text || '...'}"`}
+                                            </Text>
+                                            <Text style={{ color: colors.textSecondary, fontSize: 11, marginTop: 4 }}>{formatPostDate(notif.createdAt)}</Text>
+                                        </View>
+                                        <TouchableOpacity onPress={() => handleDeleteNotification(notif.id)} style={{ padding: 10 }}>
+                                            <Ionicons name="trash-outline" size={20} color={colors.textSecondary} />
+                                        </TouchableOpacity>
+                                    </TouchableOpacity>
+                                )
+                            }) : <View style={{ alignItems: 'center', padding: 40 }}><Ionicons name="notifications-outline" size={80} color={colors.border} /><Text style={{ color: colors.textSecondary, marginTop: 15, fontSize: 16, fontWeight: 'bold' }}>All caught up!</Text><Text style={{ color: colors.textSecondary, marginTop: 5 }}>No new notifications.</Text></View>}
+                        </ScrollView>
+                    </View>
+                </Pressable>
             </Modal>
         </SafeAreaView>
     );
@@ -490,85 +355,46 @@ export default function TeacherSocial() {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    screenContainer: { flex: 1 },
-    centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    listContent: { padding: 20 },
-    welcomeBox: { marginBottom: 20 },
-    screenTitle: { fontSize: 24, fontWeight: 'bold' },
-    screenSub: { fontSize: 14, marginTop: 4, marginBottom: 15 },
-    postButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: Colors.primary,
-        paddingHorizontal: 20,
-        paddingVertical: 15,
-        borderRadius: 16,
-    },
-    postButtonText: { fontSize: 15, fontWeight: '600', color: Colors.secondary },
-    postCard: {
-        padding: 15,
-        borderRadius: 20,
-        marginBottom: 15,
-        borderWidth: 1,
-    },
-    postHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-    avatar: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-    },
-    avatarText: { fontSize: 18, fontWeight: 'bold', color: Colors.primary },
-    userName: { fontSize: 16, fontWeight: 'bold' },
-    postTime: { fontSize: 12, marginTop: 2 },
-    postText: { fontSize: 15, lineHeight: 22, marginBottom: 15 },
-    postImage: { width: '100%', height: 200, borderRadius: 12, marginVertical: 10 },
-    attachmentBox: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12, marginVertical: 10 },
-    attachmentText: { fontSize: 14, fontWeight: '600', marginLeft: 10 },
-    divider: { height: 1, marginBottom: 12 },
-    postFooter: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+    fullScreenPost: { width: width, marginBottom: 10 },
+    postHeader: { flexDirection: 'row', alignItems: 'center', padding: 15, gap: 12 },
+    avatar: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+    avatarText: { color: '#FFF', fontWeight: 'bold' },
+    userName: { fontWeight: 'bold', fontSize: 15 },
+    postTime: { fontSize: 12 },
+    fullWidthPostImage: { width: width, height: width, backgroundColor: '#000' },
+    divider: { height: 1, marginHorizontal: 15 },
+    postFooter: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 12 },
     footerAction: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    footerText: { fontSize: 13, fontWeight: '600' },
-
+    footerText: { fontWeight: '600', fontSize: 13 },
+    inlineCommentRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, paddingHorizontal: 15, borderTopWidth: 1, gap: 10 },
+    inlineInput: { flex: 1, height: 44, borderRadius: 22, paddingHorizontal: 18, fontSize: 15 },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
-    modalContent: { width: '90%', borderRadius: 24, padding: 20, paddingBottom: 20 },
+    menuContent: { width: '80%', alignSelf: 'center', borderRadius: 25, padding: 25 },
+    menuItem: { flexDirection: 'row', alignItems: 'center', gap: 15, paddingVertical: 15 },
+    menuText: { fontSize: 16, fontWeight: '600' },
+    reportContent: { width: '85%', alignSelf: 'center', borderRadius: 25, padding: 25 },
+    reportTypes: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+    typeBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#DDD' },
+    typeText: { fontSize: 12, fontWeight: '600' },
+    reportInput: { height: 100, borderRadius: 15, padding: 15, textAlignVertical: 'top' },
+    modalFooter: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 20, gap: 15 },
+    submitBtn: { paddingHorizontal: 20, height: 40, borderRadius: 10, justifyContent: 'center' },
+    modalContent: { alignSelf: 'center', width: '100%', padding: 20, borderRadius: 20 },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    modalTitle: { fontSize: 17, fontWeight: 'bold' },
-    shareBtn: { backgroundColor: Colors.secondary, paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, minWidth: 60, alignItems: 'center' },
-    shareBtnText: { color: '#FFF', fontWeight: 'bold' },
-    postInput: { fontSize: 18, lineHeight: 26, textAlignVertical: 'top' },
-    previewImage: { width: '100%', height: 150, borderRadius: 12, marginTop: 15 },
-    previewBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0F9FF', padding: 12, borderRadius: 12, marginTop: 15 },
-    mediaToolsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 15, marginTop: 10, borderTopWidth: 1, gap: 30 },
-    mediaBtn: { padding: 8 },
-
-    commentModalContent: { height: '80%', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20 },
-    commentItem: { flexDirection: 'row', marginBottom: 15 },
-    avatarSmall: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 10 },
-    avatarTextSmall: { fontSize: 14, fontWeight: 'bold', color: Colors.primary },
-    commentBody: { flex: 1 },
-    commentHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
-    commentUserName: { fontSize: 13, fontWeight: 'bold' },
-    commentTime: { fontSize: 11 },
-    commentText: { fontSize: 14, lineHeight: 20 },
-    commentInputRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 15,
-        gap: 12,
-        borderTopWidth: 1,
-    },
-    commentInput: {
-        flex: 1,
-        height: 45,
-        borderRadius: 22,
-        paddingHorizontal: 15,
-        fontSize: 14,
-    },
-    emptyContent: { alignItems: 'center', marginTop: 50 },
-    emptyText: { marginTop: 15, fontSize: 14 },
-    emptyComments: { alignItems: 'center', padding: 30 },
+    modalTitle: { fontSize: 18, fontWeight: 'bold' },
+    postInput: { fontSize: 18, textAlignVertical: 'top' },
+    profileFilterHeader: { flexDirection: 'row', alignItems: 'center', padding: 15, gap: 10, borderBottomWidth: 1 },
+    profileFilterTitle: { fontSize: 18, fontWeight: 'bold' },
+    previewContainer: { height: 150, width: '100%', marginBottom: 15, position: 'relative' },
+    mediaPreview: { width: '100%', height: '100%', borderRadius: 12 },
+    removeMediaBtn: { position: 'absolute', top: -10, right: -10, backgroundColor: '#FFF', borderRadius: 12 },
+    mediaOptionsRow: { flexDirection: 'row', justifyContent: 'center', paddingVertical: 15, gap: 40, borderTopWidth: 1 },
+    mediaOptBtn: { alignItems: 'center', gap: 4 },
+    commentModalFull: { width: '95%', height: '80%', alignSelf: 'center', borderRadius: 25, padding: 20 },
+    commentItem: { flexDirection: 'row', gap: 10, marginBottom: 15, alignItems: 'center' },
+    sendBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
+    tinyAvatar: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+    tinyAvatarText: { fontSize: 12, fontWeight: 'bold' },
+    commentBubble: { flex: 1, padding: 10, borderRadius: 15 },
+    commentName: { fontWeight: 'bold', fontSize: 13, marginBottom: 2 }
 });

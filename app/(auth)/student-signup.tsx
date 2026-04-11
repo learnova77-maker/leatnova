@@ -3,7 +3,7 @@ import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState } from 'react';
 import {
@@ -21,11 +21,12 @@ import {
 } from 'react-native';
 
 export default function StudentSignUp() {
+    const { googleName, googleEmail, isGoogleAuth, uid } = useLocalSearchParams<{ googleName: string, googleEmail: string, isGoogleAuth: string, uid: string }>();
     const router = useRouter();
     const { colors, isDark } = useTheme();
-    const [fullName, setFullName] = useState('');
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
+    const [fullName, setFullName] = useState(googleName || '');
+    const [email, setEmail] = useState(googleEmail || '');
+    const [password, setPassword] = useState(isGoogleAuth === 'true' ? 'google-auth-pass' : '');
     const [isLoading, setIsLoading] = useState(false);
 
     const handleSignUp = async () => {
@@ -45,7 +46,8 @@ export default function StudentSignUp() {
                 fullName,
                 email,
                 password,
-                role: 'student'
+                role: 'student',
+                ...(isGoogleAuth === 'true' && uid ? { uid, isGoogleAuth: true } : {})
             };
 
             const response = await authApi.signup(signupData);
@@ -79,41 +81,53 @@ export default function StudentSignUp() {
                     </View>
 
                     <View style={styles.form}>
-                        <View style={styles.inputContainer}>
-                            <Text style={[styles.label, { color: colors.text }]}>Full Name *</Text>
-                            <TextInput
-                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                                placeholder="Ali Ahmed"
-                                placeholderTextColor="#999"
-                                value={fullName}
-                                onChangeText={setFullName}
-                            />
-                        </View>
+                        {isGoogleAuth === 'true' ? (
+                            <View style={{ alignItems: 'center', marginVertical: 30 }}>
+                                <Ionicons name="checkmark-circle" size={60} color="#27AE60" />
+                                <Text style={[{ fontSize: 24, fontWeight: 'bold', color: colors.text, marginTop: 15 }]}>Authenticated!</Text>
+                                <Text style={[{ fontSize: 16, color: colors.textSecondary, textAlign: 'center', marginTop: 10 }]}>
+                                    Signed in securely via Google as {googleName} ({googleEmail}).
+                                </Text>
+                            </View>
+                        ) : (
+                            <>
+                                <View style={styles.inputContainer}>
+                                    <Text style={[styles.label, { color: colors.text }]}>Full Name *</Text>
+                                    <TextInput
+                                        style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                                        placeholder="Ali Ahmed"
+                                        placeholderTextColor="#999"
+                                        value={fullName}
+                                        onChangeText={setFullName}
+                                    />
+                                </View>
 
-                        <View style={styles.inputContainer}>
-                            <Text style={[styles.label, { color: colors.text }]}>Email Address *</Text>
-                            <TextInput
-                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                                placeholder="ali@example.com"
-                                placeholderTextColor="#999"
-                                keyboardType="email-address"
-                                autoCapitalize="none"
-                                value={email}
-                                onChangeText={setEmail}
-                            />
-                        </View>
+                                <View style={styles.inputContainer}>
+                                    <Text style={[styles.label, { color: colors.text }]}>Email Address *</Text>
+                                    <TextInput
+                                        style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                                        placeholder="ali@example.com"
+                                        placeholderTextColor="#999"
+                                        keyboardType="email-address"
+                                        autoCapitalize="none"
+                                        value={email}
+                                        onChangeText={setEmail}
+                                    />
+                                </View>
 
-                        <View style={styles.inputContainer}>
-                            <Text style={[styles.label, { color: colors.text }]}>Password *</Text>
-                            <TextInput
-                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                                placeholder="••••••••"
-                                placeholderTextColor="#999"
-                                secureTextEntry
-                                value={password}
-                                onChangeText={setPassword}
-                            />
-                        </View>
+                                <View style={styles.inputContainer}>
+                                    <Text style={[styles.label, { color: colors.text }]}>Password *</Text>
+                                    <TextInput
+                                        style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                                        placeholder="••••••••"
+                                        placeholderTextColor="#999"
+                                        secureTextEntry
+                                        value={password}
+                                        onChangeText={setPassword}
+                                    />
+                                </View>
+                            </>
+                        )}
 
                         <TouchableOpacity
                             style={[styles.signUpButton, isLoading && { opacity: 0.7 }]}

@@ -1,5 +1,6 @@
 import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
 import { Image, StatusBar, StyleSheet, Text, View } from 'react-native';
@@ -24,12 +25,36 @@ export default function SplashScreen() {
             easing: Easing.out(Easing.back(1.5))
         });
 
-        // Navigate to login after 2.5 seconds
-        const timeout = setTimeout(() => {
-            router.replace('/login');
-        }, 2500);
+        const checkUser = async () => {
+            try {
+                const userDataString = await AsyncStorage.getItem('user');
 
-        return () => clearTimeout(timeout);
+                // Keep splash screen for at least 2.5 seconds to show brand
+                setTimeout(() => {
+                    if (userDataString) {
+                        const userData = JSON.parse(userDataString);
+                        const { role, status } = userData;
+
+                        if (role === 'teacher') {
+                            if (status === 'pending') {
+                                router.replace('/(auth)/approval');
+                            } else {
+                                router.replace('/teacher');
+                            }
+                        } else {
+                            router.replace('/student');
+                        }
+                    } else {
+                        router.replace('/(auth)/login');
+                    }
+                }, 2500);
+            } catch (error) {
+                console.error("Auth Check Error:", error);
+                router.replace('/(auth)/login');
+            }
+        };
+
+        checkUser();
     }, []);
 
     const animatedStyle = useAnimatedStyle(() => {

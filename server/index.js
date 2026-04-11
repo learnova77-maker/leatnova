@@ -16,6 +16,7 @@ const userRoutes = require('./routes/users');
 const liveRoutes = require('./routes/live');
 const socialRoutes = require('./routes/social');
 const paymentRoutes = require('./routes/payment');
+const assignmentRoutes = require('./routes/assignments');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/courses', courseRoutes);
@@ -23,6 +24,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/live', liveRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/payment', paymentRoutes);
+app.use('/api/assignments', assignmentRoutes);
 
 app.get('/', (req, res) => {
     res.send('Learnova Secure Backend is running 🚀');

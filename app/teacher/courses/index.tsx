@@ -17,6 +17,7 @@ import {
     Modal,
     Platform,
     Pressable,
+    RefreshControl,
     SafeAreaView,
     ScrollView,
     StatusBar,
@@ -57,6 +58,13 @@ export default function TeacherCourseList() {
     const [newCourseDescription, setNewCourseDescription] = useState('');
     const [thumbnail, setThumbnail] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+
+    const onRefresh = React.useCallback(async () => {
+        setRefreshing(true);
+        await loadCourses();
+        setRefreshing(false);
+    }, []);
 
     const loadCourses = async () => {
         setIsLoading(true);
@@ -213,6 +221,9 @@ export default function TeacherCourseList() {
                     <FlatList
                         data={courses}
                         keyExtractor={(item) => item.id}
+                        refreshControl={
+                            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} tintColor={Colors.primary} />
+                        }
                         renderItem={({ item }) => (
                             <Swipeable
                                 renderLeftActions={() => renderLeftActions(item.id)}
@@ -261,8 +272,9 @@ export default function TeacherCourseList() {
                         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} />
                     </Pressable>
                     <KeyboardAvoidingView
-                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                         style={styles.modalCentered}
+                        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
                     >
                         <View style={[styles.modalContentCompact, { backgroundColor: colors.card }]}>
                             <View style={styles.modalHeaderCompact}>
@@ -411,7 +423,7 @@ const styles = StyleSheet.create({
     modalHeaderCompact: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingHorizontal: 5 },
     modalTitleCompact: { fontSize: 18, fontWeight: 'bold' },
     closeBtn: { padding: 5 },
-    formScroll: { gap: 15 },
+    formScroll: { gap: 15, paddingBottom: 60 },
     inputGroup: { gap: 8 },
     label: { fontSize: 13, fontWeight: '600', marginLeft: 2 },
     inputCompact: { borderRadius: 12, padding: 12, fontSize: 15, borderWidth: 1 },

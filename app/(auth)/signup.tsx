@@ -3,7 +3,7 @@ import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState } from 'react';
 import {
@@ -37,13 +37,14 @@ const SUBJECT_SUGGESTIONS = [
 ];
 
 export default function SignUpScreen() {
+    const { googleName, googleEmail, isGoogleAuth, uid } = useLocalSearchParams<{ googleName: string, googleEmail: string, isGoogleAuth: string, uid: string }>();
     const router = useRouter();
     const { colors, isDark } = useTheme();
 
     // Form State
-    const [fullName, setFullName] = useState('');
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
+    const [fullName, setFullName] = useState(googleName || '');
+    const [email, setEmail] = useState(googleEmail || '');
+    const [password, setPassword] = useState(isGoogleAuth === 'true' ? 'google-auth-pass' : '');
     const [expertise, setExpertise] = useState('');
     const [bio, setBio] = useState('');
     const [experience, setExperience] = useState('');
@@ -125,6 +126,11 @@ export default function SignUpScreen() {
             formData.append('website', website);
             formData.append('qualification', qualification);
 
+            if (isGoogleAuth === 'true' && uid) {
+                formData.append('uid', uid);
+                formData.append('isGoogleAuth', 'true');
+            }
+
             if (photoUri) {
                 const uriParts = photoUri.split('.');
                 const fileType = uriParts[uriParts.length - 1];
@@ -196,44 +202,56 @@ export default function SignUpScreen() {
                     </View>
 
                     <View style={styles.form}>
-                        {/* Full Name */}
-                        <View style={styles.inputContainer}>
-                            <Text style={[styles.label, { color: colors.text }]}>Full Name *</Text>
-                            <TextInput
-                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                                placeholder="e.g. Ali Ahmed"
-                                placeholderTextColor="#999"
-                                value={fullName}
-                                onChangeText={setFullName}
-                            />
-                        </View>
+                        {isGoogleAuth === 'true' ? (
+                            <View style={{ alignItems: 'center', marginBottom: 20 }}>
+                                <Ionicons name="checkmark-circle" size={40} color="#27AE60" />
+                                <Text style={[{ fontSize: 18, fontWeight: 'bold', color: colors.text, marginTop: 10 }]}>Authenticated via Google!</Text>
+                                <Text style={[{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: 5 }]}>
+                                    Signed in as {googleName} ({googleEmail}). Fill the rest of the details below.
+                                </Text>
+                            </View>
+                        ) : (
+                            <>
+                                {/* Full Name */}
+                                <View style={styles.inputContainer}>
+                                    <Text style={[styles.label, { color: colors.text }]}>Full Name *</Text>
+                                    <TextInput
+                                        style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                                        placeholder="e.g. Ali Ahmed"
+                                        placeholderTextColor="#999"
+                                        value={fullName}
+                                        onChangeText={setFullName}
+                                    />
+                                </View>
 
-                        {/* Email */}
-                        <View style={styles.inputContainer}>
-                            <Text style={[styles.label, { color: colors.text }]}>Email Address *</Text>
-                            <TextInput
-                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                                placeholder="example@email.com"
-                                keyboardType="email-address"
-                                autoCapitalize="none"
-                                placeholderTextColor="#999"
-                                value={email}
-                                onChangeText={setEmail}
-                            />
-                        </View>
+                                {/* Email */}
+                                <View style={styles.inputContainer}>
+                                    <Text style={[styles.label, { color: colors.text }]}>Email Address *</Text>
+                                    <TextInput
+                                        style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                                        placeholder="example@email.com"
+                                        keyboardType="email-address"
+                                        autoCapitalize="none"
+                                        placeholderTextColor="#999"
+                                        value={email}
+                                        onChangeText={setEmail}
+                                    />
+                                </View>
 
-                        {/* Password */}
-                        <View style={styles.inputContainer}>
-                            <Text style={[styles.label, { color: colors.text }]}>Password *</Text>
-                            <TextInput
-                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                                placeholder="••••••••"
-                                secureTextEntry
-                                placeholderTextColor="#999"
-                                value={password}
-                                onChangeText={setPassword}
-                            />
-                        </View>
+                                {/* Password */}
+                                <View style={styles.inputContainer}>
+                                    <Text style={[styles.label, { color: colors.text }]}>Password *</Text>
+                                    <TextInput
+                                        style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
+                                        placeholder="••••••••"
+                                        secureTextEntry
+                                        placeholderTextColor="#999"
+                                        value={password}
+                                        onChangeText={setPassword}
+                                    />
+                                </View>
+                            </>
+                        )}
 
                         {/* Expertise / Subject with Suggestions */}
                         <View style={[styles.inputContainer, { zIndex: 1000 }]}>

@@ -30,7 +30,7 @@ export default function SignUpChoice() {
                 <View style={styles.choices}>
                     <TouchableOpacity
                         style={[styles.choiceCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                        onPress={() => router.push('/student-signup')}
+                        onPress={() => router.push({ pathname: '/google-signup', params: { role: 'student' } })}
                     >
                         <View style={[styles.iconCircle, { backgroundColor: isDark ? '#1A2744' : '#E8F4FD' }]}>
                             <Ionicons name="person" size={32} color={Colors.primary} />
@@ -44,7 +44,7 @@ export default function SignUpChoice() {
 
                     <TouchableOpacity
                         style={[styles.choiceCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                        onPress={() => router.push('/signup')}
+                        onPress={() => router.push({ pathname: '/google-signup', params: { role: 'teacher' } })}
                     >
                         <View style={[styles.iconCircle, { backgroundColor: isDark ? '#2D1F15' : '#FDF2E9' }]}>
                             <Ionicons name="school" size={32} color="#E67E22" />
@@ -52,6 +52,20 @@ export default function SignUpChoice() {
                         <View style={styles.choiceText}>
                             <Text style={[styles.choiceTitle, { color: colors.text }]}>Sign up as Teacher</Text>
                             <Text style={[styles.choiceDescription, { color: colors.textSecondary }]}>Share your knowledge and earn from your expertise.</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.choiceCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                        onPress={() => router.push({ pathname: '/google-signup', params: { role: 'school' } })}
+                    >
+                        <View style={[styles.iconCircle, { backgroundColor: isDark ? '#1A3324' : '#E8F8F0' }]}>
+                            <Ionicons name="business" size={32} color="#27AE60" />
+                        </View>
+                        <View style={styles.choiceText}>
+                            <Text style={[styles.choiceTitle, { color: colors.text }]}>Sign up as School</Text>
+                            <Text style={[styles.choiceDescription, { color: colors.textSecondary }]}>Register your institution, manage teachers & students.</Text>
                         </View>
                         <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                     </TouchableOpacity>

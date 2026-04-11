@@ -60,7 +60,7 @@ router.post('/post/create', async (req, res) => {
 
 // Like a post
 router.post('/post/like', async (req, res) => {
-    const { postId, userId } = req.body;
+    const { postId, userId, userName } = req.body;
     try {
         const likeRef = ref(rtdb, `social_posts/${postId}/likes/${userId}`);
         const snapshot = await get(likeRef);
@@ -78,6 +78,22 @@ router.post('/post/like', async (req, res) => {
             await update(ref(rtdb, `social_posts/${postId}`), {
                 likesCount: increment(1)
             });
+
+            // Create notification
+            const postSnapshot = await get(ref(rtdb, `social_posts/${postId}`));
+            const postOwnerId = postSnapshot.val().userId;
+            if (postOwnerId !== userId) {
+                const notifRef = push(ref(rtdb, `notifications/${postOwnerId}`));
+                await set(notifRef, {
+                    type: 'like',
+                    postId,
+                    senderId: userId,
+                    senderName: userName || 'Someone',
+                    createdAt: Date.now(),
+                    read: false
+                });
+            }
+
             res.json({ success: true, liked: true });
         }
     } catch (err) {
@@ -104,6 +120,22 @@ router.post('/post/comment', async (req, res) => {
             commentsCount: increment(1)
         });
 
+        // Create notification
+        const postSnapshot = await get(ref(rtdb, `social_posts/${postId}`));
+        const postOwnerId = postSnapshot.val().userId;
+        if (postOwnerId !== userId) {
+            const notifRef = push(ref(rtdb, `notifications/${postOwnerId}`));
+            await set(notifRef, {
+                type: 'comment',
+                postId,
+                senderId: userId,
+                senderName: userName,
+                text,
+                createdAt: Date.now(),
+                read: false
+            });
+        }
+
         res.status(201).json({ success: true, id: newCommentRef.key });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
@@ -116,6 +148,75 @@ router.delete('/post/delete/:postId', async (req, res) => {
     try {
         await set(ref(rtdb, `social_posts/${postId}`), null);
         res.json({ success: true, message: 'Post deleted' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Get notifications
+router.get('/notifications/:userId', async (req, res) => {
+    const { userId } = req.params;
+    try {
+        const snapshot = await get(ref(rtdb, `notifications/${userId}`));
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            const notifications = Object.keys(data).map(key => ({
+                id: key,
+                ...data[key]
+            })).sort((a, b) => b.createdAt - a.createdAt);
+            res.json({ success: true, notifications });
+        } else {
+            res.json({ success: true, notifications: [] });
+        }
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Mark all notifications as read
+router.post('/notifications/read-all', async (req, res) => {
+    const { userId } = req.body;
+    try {
+        const snapshot = await get(ref(rtdb, `notifications/${userId}`));
+        if (snapshot.exists()) {
+            const updates = {};
+            snapshot.forEach((childSnapshot) => {
+                updates[`notifications/${userId}/${childSnapshot.key}/read`] = true;
+            });
+            await update(ref(rtdb), updates);
+        }
+        res.json({ success: true, message: 'All notifications marked as read' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Delete a notification
+router.delete('/notifications/:userId/:notifId', async (req, res) => {
+    const { userId, notifId } = req.params;
+    try {
+        await set(ref(rtdb, `notifications/${userId}/${notifId}`), null);
+        res.json({ success: true, message: 'Notification deleted' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Report a post
+router.post('/post/report', async (req, res) => {
+    const { postId, userId, userName, reportType, description } = req.body;
+    try {
+        const reportsRef = ref(rtdb, 'post_reports');
+        const newReportRef = push(reportsRef);
+        await set(newReportRef, {
+            postId,
+            userId,
+            userName,
+            reportType,
+            description,
+            createdAt: Date.now()
+        });
+        res.json({ success: true, message: 'Post reported successfully' });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }

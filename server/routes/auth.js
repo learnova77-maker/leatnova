@@ -49,9 +49,16 @@ router.post('/signup', upload.fields([
             return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long' });
         }
 
-        // 1. Create User in Firebase Auth
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const user = userCredential.user;
+        let user = null;
+
+        // 1. Create User in Firebase Auth or Use Existing UID from Google Auth
+        if (req.body.uid && req.body.isGoogleAuth) {
+            // User already authenticated via Google on frontend
+            user = { uid: req.body.uid };
+        } else {
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            user = userCredential.user;
+        }
 
         // 2. Upload Files if any
         let photoUrl = null;
@@ -71,7 +78,7 @@ router.post('/signup', upload.fields([
             fullName,
             email,
             role: role || 'student',
-            status: role === 'teacher' ? 'pending' : 'active',
+            status: (role === 'teacher' || role === 'school') ? 'pending' : 'active',
             uid: user.uid,
             createdAt: Date.now(),
             photoUrl,

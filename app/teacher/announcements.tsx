@@ -1,16 +1,21 @@
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
+import { userApi } from '@/constants/api';
 import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
+    ActivityIndicator,
+    Alert,
     FlatList,
     KeyboardAvoidingView,
     Modal,
     Platform,
     Pressable,
+    RefreshControl,
     SafeAreaView,
     ScrollView,
     StatusBar,
@@ -18,7 +23,7 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 
 interface Announcement {
@@ -32,29 +37,73 @@ export default function TeacherAnnouncements() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const { colors, isDark } = useTheme();
     const router = useRouter();
+    const [isLoading, setIsLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const [isModalVisible, setIsModalVisible] = useState(false);
-    const [announcements, setAnnouncements] = useState<Announcement[]>([
-        { id: '1', title: 'New Batch Opening', date: '2 mins ago', text: 'New IELTS evening batch starts from 15th March. Check availability.' },
-        { id: '2', title: 'Weekend Test Schedule', date: 'Yesterday', text: 'Mock test for Reading section is scheduled for Saturday 10 AM.' },
-    ]);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [announcements, setAnnouncements] = useState<any[]>([]);
 
     const [newTitle, setNewTitle] = useState('');
     const [newText, setNewText] = useState('');
 
-    const handleAddAnnouncement = () => {
-        if (newTitle.trim() === '' || newText.trim() === '') return;
+    const loadHistory = async () => {
+        try {
+            const userData = await AsyncStorage.getItem('user');
+            if (userData) {
+                const user = JSON.parse(userData);
+                const res = await userApi.getAnnouncementHistory(user.uid);
+                if (res.data.success) {
+                    setAnnouncements(res.data.announcements);
+                }
+            }
+        } catch (err) {
+            console.error('Error loading announcement history:', err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
-        const newAnn: Announcement = {
-            id: Math.random().toString(),
-            title: newTitle,
-            date: 'Just now',
-            text: newText,
-        };
+    React.useEffect(() => {
+        loadHistory();
+    }, []);
 
-        setAnnouncements([newAnn, ...announcements]);
-        setNewTitle('');
-        setNewText('');
-        setIsModalVisible(false);
+    const onRefresh = React.useCallback(async () => {
+        setRefreshing(true);
+        await loadHistory();
+        setRefreshing(false);
+    }, []);
+
+    const handleAddAnnouncement = async () => {
+        if (newTitle.trim() === '' || newText.trim() === '') {
+            Alert.alert('Required', 'Please fill in both title and message.');
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            const userData = await AsyncStorage.getItem('user');
+            if (userData) {
+                const user = JSON.parse(userData);
+                const res = await userApi.sendAnnouncement({
+                    teacherId: user.uid,
+                    teacherName: user.fullName,
+                    title: newTitle,
+                    message: newText
+                });
+
+                if (res.data.success) {
+                    Alert.alert('Success', 'Announcement broadcasted to all enrolled students!');
+                    setNewTitle('');
+                    setNewText('');
+                    setIsModalVisible(false);
+                    loadHistory();
+                }
+            }
+        } catch (err: any) {
+            Alert.alert('Error', err.response?.data?.message || 'Failed to send announcement');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -88,13 +137,25 @@ export default function TeacherAnnouncements() {
                 <FlatList
                     data={announcements}
                     keyExtractor={(item) => item.id}
+                    refreshControl={
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} tintColor={Colors.primary} />
+                    }
+                    ListEmptyComponent={() => (
+                        isLoading ? <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 50 }} /> :
+                            <View style={{ alignItems: 'center', marginTop: 50 }}>
+                                <Ionicons name="megaphone-outline" size={60} color={colors.textSecondary} style={{ opacity: 0.3 }} />
+                                <Text style={{ color: colors.textSecondary, marginTop: 10 }}>No announcements sent yet.</Text>
+                            </View>
+                    )}
                     renderItem={({ item }) => (
                         <View style={[styles.annItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <View style={styles.annHead}>
                                 <Text style={[styles.annTitle, { color: colors.text }]}>{item.title}</Text>
-                                <Text style={[styles.annDate, { color: colors.textSecondary }]}>{item.date}</Text>
+                                <Text style={[styles.annDate, { color: colors.textSecondary }]}>
+                                    {new Date(item.createdAt).toLocaleDateString()}
+                                </Text>
                             </View>
-                            <Text style={[styles.annText, { color: colors.textSecondary }]}>{item.text}</Text>
+                            <Text style={[styles.annText, { color: colors.textSecondary }]}>{item.message || item.text}</Text>
                         </View>
                     )}
                     contentContainerStyle={styles.listContent}
@@ -158,10 +219,15 @@ export default function TeacherAnnouncements() {
                                     </View>
 
                                     <TouchableOpacity
-                                        style={styles.submitButton}
+                                        style={[styles.submitButton, isSubmitting && { opacity: 0.7 }]}
                                         onPress={handleAddAnnouncement}
+                                        disabled={isSubmitting}
                                     >
-                                        <Text style={styles.submitButtonText}>Post Announcement</Text>
+                                        {isSubmitting ? (
+                                            <ActivityIndicator color="#FFF" />
+                                        ) : (
+                                            <Text style={styles.submitButtonText}>Post Announcement</Text>
+                                        )}
                                     </TouchableOpacity>
                                 </View>
                             </ScrollView>
