@@ -1,27 +1,34 @@
 import AppHeader from '@/components/sidebar/AppHeader';
-import { courseApi, paymentApi } from '@/constants/api';
-import { Colors } from '@/constants/theme';
+import { courseApi, paymentApi, userApi } from '@/constants/api';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ResizeMode, Video } from 'expo-av';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Image } from 'expo-image';
 import * as Linking from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
-    Image,
+    Animated,
+    Dimensions,
+    Keyboard,
     Modal,
+    Platform,
     SafeAreaView,
     ScrollView,
     StatusBar,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
-    View
+    View,
 } from 'react-native';
+import { endConnection, finishTransaction, initConnection, purchaseErrorListener, purchaseUpdatedListener } from 'react-native-iap';
+
+const { width } = Dimensions.get('window');
 
 export default function StudentCourseDetail() {
     const { id } = useLocalSearchParams();
@@ -33,13 +40,106 @@ export default function StudentCourseDetail() {
     const [isPaymentLoading, setIsPaymentLoading] = useState(false);
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [selectedVideo, setSelectedVideo] = useState<any>(null);
+    const [isVideoLoading, setIsVideoLoading] = useState(true);
+    const [reviewModalVisible, setReviewModalVisible] = useState(false);
+    const [rating, setRating] = useState(5);
+    const [reviewText, setReviewText] = useState('');
+    const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+    const [videoProgressMap, setVideoProgressMap] = useState<Record<string, number>>({});
+    const [downloadingVideos, setDownloadingVideos] = useState<Record<string, number>>({});
+    const [downloadedIds, setDownloadedIds] = useState<string[]>([]);
     const url = Linking.useURL();
+
+    // Keyboard Tracking
+    const keyboardHeight = React.useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', (e) => {
+            Animated.timing(keyboardHeight, { toValue: e.endCoordinates.height, duration: 250, useNativeDriver: false }).start();
+        });
+        const hideSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => {
+            Animated.timing(keyboardHeight, { toValue: 0, duration: 250, useNativeDriver: false }).start();
+        });
+        return () => { showSub.remove(); hideSub.remove(); };
+    }, []);
+
+    const videoSourceString = typeof selectedVideo === 'string' ? selectedVideo : (selectedVideo?.videoUrl || selectedVideo?.url || null);
+
+    const player = useVideoPlayer(videoSourceString, p => {
+        if (videoSourceString) {
+            p.loop = false;
+            // Native recovery for saved progress will be handled gracefully after player is ready
+            p.play();
+        }
+    });
+
+    useEffect(() => {
+        if (!player) return;
+
+        const interval = setInterval(() => {
+            // Check status for error or idle failures
+            if (player.status === 'error' || player.status === 'idle') {
+                if (player.status === 'idle' && isVideoLoading) {
+                    setIsVideoLoading(false);
+                } else if (player.status === 'error') {
+                    setIsVideoLoading(false);
+                }
+            }
+            // Check status for buffering/loading
+            else if (player.status === 'loading') {
+                setIsVideoLoading(true);
+            } else if (player.status === 'readyToPlay' || player.playing) {
+                setIsVideoLoading(false);
+                // Ensure it plays if it's ready but got stuck
+                if (!player.playing) {
+                    player.play();
+                }
+            }
+
+            // Save progress
+            const currentTime = player.currentTime;
+            if (currentTime && currentTime > 3) {
+                const currentPos = currentTime * 1000;
+                const videoId = typeof selectedVideo === 'string' ? selectedVideo : selectedVideo?.id || videoSourceString;
+                if (videoId) {
+                    setVideoProgressMap(prev => {
+                        const newMap = { ...prev, [videoId]: currentPos };
+                        AsyncStorage.setItem('video_progress', JSON.stringify(newMap)).catch(() => { });
+                        return newMap;
+                    });
+                }
+            }
+        }, 1000);
+
+        return () => {
+            clearInterval(interval);
+        };
+    }, [player, selectedVideo]);
+
+    // Reset loading state when video changes
+    useEffect(() => {
+        if (selectedVideo) {
+            setIsVideoLoading(true);
+        }
+    }, [selectedVideo]);
 
     useEffect(() => {
         loadUserAndCourse();
     }, [id]);
 
-    // Handle deep link return from Stripe
+    useEffect(() => {
+        const loadDownloaded = async () => {
+            try {
+                const data = await AsyncStorage.getItem('downloaded_videos');
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    setDownloadedIds(parsed.map((item: any) => item.id));
+                }
+            } catch (e) { }
+        };
+        loadDownloaded();
+    }, []);
+
     useEffect(() => {
         if (url) {
             const { queryParams } = Linking.parse(url);
@@ -51,6 +151,86 @@ export default function StudentCourseDetail() {
             }
         }
     }, [url]);
+
+    // Google Play IAP Initialization
+    useEffect(() => {
+        const setupIAP = async () => {
+            try {
+                await initConnection();
+            } catch (err) {
+                console.log('IAP Init Error:', err);
+            }
+        };
+        setupIAP();
+
+        const purchaseUpdateSubscription = purchaseUpdatedListener(async (purchase: any) => {
+            if (purchase) {
+                try {
+                    Alert.alert('DEBUG 1', 'Received Native Purchase');
+                    try {
+                        await finishTransaction({ purchase, isConsumable: true });
+                        Alert.alert('DEBUG 2', 'Finish Transaction Passed');
+                    } catch (e: any) {
+                        Alert.alert('DEBUG FAILED', 'finishTransaction error: ' + (e?.message || JSON.stringify(e)));
+                        throw e; // Bubble up
+                    }
+
+                    // Critical: The listener closure might have stale state!
+                    // Always read from AsyncStorage to get the latest currentUser to avoid "null" crashes
+                    let syncUser = currentUser;
+                    if (!syncUser || !syncUser.uid) {
+                        const saved = await AsyncStorage.getItem('user');
+                        if (saved) {
+                            syncUser = JSON.parse(saved);
+                        }
+                    }
+                    if (!syncUser || !syncUser.uid) {
+                        setIsPaymentLoading(false);
+                        Alert.alert('Session Error', 'Please log in again to sync your purchase.');
+                        return;
+                    }
+
+                    Alert.alert('DEBUG 3', 'Calling paymentApi.createCheckout for User: ' + syncUser.uid);
+
+                    // Tell our backend to give access
+                    await paymentApi.createCheckout({
+                        courseId: id as string,
+                        courseTitle: 'Premium Course',
+                        price: '0',
+                        studentId: syncUser.uid,
+                        studentName: syncUser.fullName || '',
+                        teacherId: '',
+                    });
+
+                    Alert.alert('DEBUG 4', 'API Hit Successful!');
+
+                    setIsPaymentLoading(false);
+                    Alert.alert('Success', 'Enrollment successful via Google Play!');
+                    setIsEnrolled(true);
+                    loadUserAndCourse();
+                } catch (ackErr: any) {
+                    Alert.alert('DEBUG CATCH BLOCK', 'Message: ' + (ackErr?.message || 'Unknown'));
+                    console.log('ackErr', ackErr);
+                    setIsPaymentLoading(false);
+                    Alert.alert('Sync Error', 'Payment succeeded but course sync failed. Please click Join Course again to automatically restore.');
+                }
+            }
+        });
+
+        const purchaseErrorSubscription = purchaseErrorListener((error) => {
+            setIsPaymentLoading(false);
+            console.log('purchaseErrorListener', error);
+            if (error.code !== 'E_USER_CANCELLED') {
+                // Don't show confusing errors if it's already owned
+            }
+        });
+
+        return () => {
+            purchaseUpdateSubscription.remove();
+            purchaseErrorSubscription.remove();
+            endConnection();
+        };
+    }, []); // Empty dependency array so listener is not recreated multiple times!
 
     const handlePaymentSuccess = async (sessionId: string) => {
         setIsPaymentLoading(true);
@@ -74,144 +254,197 @@ export default function StudentCourseDetail() {
     };
 
     const loadUserAndCourse = async () => {
-        console.log('Loading course details for ID:', id);
         try {
-            // Get current user
             const userData = await AsyncStorage.getItem('user');
             let user = null;
             if (userData) {
                 user = JSON.parse(userData);
                 setCurrentUser(user);
-                console.log('Current user found:', user.uid);
             }
 
-            // Fetch course details
             const response = await courseApi.getCourseDetails(id as string);
-            console.log('Course API response:', response.data.success ? 'Success' : 'Failed');
             if (response.data.success) {
                 setCourse(response.data.course);
-            } else {
-                console.warn('Course fetch failed:', response.data.message);
             }
 
-            // Check enrollment status
             if (user) {
-                try {
-                    const enrollResponse = await paymentApi.checkEnrollment({
-                        studentId: user.uid,
-                        courseId: id as string,
-                    });
-                    console.log('Enrollment check:', enrollResponse.data.enrolled ? 'Enrolled' : 'Not Enrolled');
-                    if (enrollResponse.data.success && enrollResponse.data.enrolled) {
-                        setIsEnrolled(true);
-                    }
-                } catch (e) {
-                    console.error('Enrollment check error:', e);
+                const enrollResponse = await paymentApi.checkEnrollment({
+                    studentId: user.uid,
+                    courseId: id as string,
+                });
+                if (enrollResponse.data.success && enrollResponse.data.enrolled) {
+                    setIsEnrolled(true);
                 }
             }
         } catch (err) {
-            console.error('Error in loadUserAndCourse:', err);
-            Alert.alert('Error', 'Failed to load course details.');
+            console.error('Error loading course:', err);
         } finally {
-            console.log('Finishing load, setting isLoading to false');
             setIsLoading(false);
         }
     };
+    const handleSubmitReview = async () => {
+        if (!reviewText.trim()) return;
+        setIsSubmittingReview(true);
+        try {
+            const res = await courseApi.addReview({
+                courseId: course.id,
+                studentId: currentUser.uid,
+                studentName: currentUser.fullName || 'Student',
+                rating,
+                text: reviewText
+            });
+            if (res.data.success) {
+                setReviewText('');
+                setRating(5);
+                loadUserAndCourse();
+            }
+        } catch (err) {
+            console.error('Review submission failed:', err);
+        } finally {
+            setIsSubmittingReview(false);
+        }
+    };
 
-    const [videoProgressMap, setVideoProgressMap] = useState<Record<string, number>>({});
+    const handleDeleteReview = async () => {
+        const userReviewId = course?.reviews ? Object.keys(course.reviews).find(key => course.reviews[key].studentId === currentUser?.uid) : null;
+        if (!userReviewId) return;
+        Alert.alert('DELETE REVIEW', 'Are you sure you want to delete your review?', [
+            { text: 'CANCEL', style: 'cancel' },
+            {
+                text: 'CONFIRM', style: 'destructive', onPress: async () => {
+                    try {
+                        const res = await courseApi.deleteReview(course.id, userReviewId);
+                        if (res.data.success) {
+                            Alert.alert('DELETED', 'Review has been removed.');
+                            loadUserAndCourse();
+                        }
+                    } catch (e) {
+                        Alert.alert('ERROR', 'Could not delete review.');
+                    }
+                }
+            }
+        ]);
+    };
 
-    // Load all saved video progresses
     useEffect(() => {
         const loadProgress = async () => {
             try {
                 const saved = await AsyncStorage.getItem('video_progress');
                 if (saved) setVideoProgressMap(JSON.parse(saved));
-            } catch (e) {
-                console.error('Error loading progress:', e);
-            }
+            } catch (e) { }
         };
         loadProgress();
     }, []);
 
-    const handleVideoPress = async (video: any) => {
-        const videoId = video.id || video.videoUrl;
-        setSelectedVideo(video);
-
-        // Save to Recent Videos in AsyncStorage
-        try {
-            const recentVideo = {
-                id: videoId,
-                title: video.title || 'Course Video',
-                videoUrl: video.videoUrl,
-                courseId: id,
-                courseTitle: course?.title,
-                thumbnail: course?.thumbnail,
-                playedAt: new Date().toISOString()
-            };
-            await AsyncStorage.setItem('recent_video', JSON.stringify(recentVideo));
-        } catch (error) {
-            console.error('Error saving recent video:', error);
-        }
-    };
-
-    const handlePlaybackStatusUpdate = async (status: any, videoId: string) => {
-        if (status.isLoaded && status.isPlaying) {
-            // Save progress every few seconds
-            const currentPos = status.positionMillis;
-            if (currentPos > 3000) { // Only save if more than 3 seconds
-                const newProgressMap = { ...videoProgressMap, [videoId]: currentPos };
-                setVideoProgressMap(newProgressMap);
-                await AsyncStorage.setItem('video_progress', JSON.stringify(newProgressMap));
-            }
-        }
-    };
+    useEffect(() => {
+        const loadProgress = async () => {
+            try {
+                const saved = await AsyncStorage.getItem('video_progress');
+                if (saved) setVideoProgressMap(JSON.parse(saved));
+            } catch (e) { }
+        };
+        loadProgress();
+    }, []);
 
     const handleEnroll = async () => {
         if (!currentUser) {
-            Alert.alert('Login Required', 'Please login to enroll in courses.');
+            Alert.alert('Login Required', 'Please login to enroll in this course.');
             return;
         }
 
         if (!course) return;
-        const price = course.price || '0';
-
         setIsPaymentLoading(true);
-        try {
-            const returnUrl = Linking.createURL('/student/courses/' + id);
 
-            const response = await paymentApi.createCheckout({
-                courseId: course.id,
-                courseTitle: course.title,
-                price: price,
-                studentId: currentUser.uid,
-                studentName: currentUser.fullName || '',
-                teacherId: course.instructorId || course.userId,
-                successUrl: `${returnUrl}?session_id={CHECKOUT_SESSION_ID}&status=success`,
-                cancelUrl: `${returnUrl}?status=cancel`
-            });
+        const isFree = !course.price || parseFloat(course.price) === 0;
 
-            if (response.data.success) {
-                if (response.data.free) {
+        if (isFree) {
+            try {
+                const response = await paymentApi.createCheckout({
+                    courseId: course.id,
+                    courseTitle: course.title,
+                    price: '0',
+                    studentId: currentUser.uid,
+                    studentName: currentUser.fullName || '',
+                    teacherId: course.instructorId || course.userId,
+                });
+
+                if (response.data.success && response.data.free) {
                     setIsEnrolled(true);
-                    Alert.alert('🎉 Enrolled!', 'You are now enrolled in this course.');
-                    setIsPaymentLoading(false);
-                } else if (response.data.url) {
-                    await WebBrowser.openBrowserAsync(response.data.url);
+                    loadUserAndCourse();
                 }
+            } catch (err: any) {
+                Alert.alert('Error', 'Failed to enroll in free course.');
+            } finally {
+                setIsPaymentLoading(false);
             }
-        } catch (err: any) {
-            const serverMsg = err?.response?.data?.message || err?.message || 'Unknown error';
-            console.error('Enroll error:', serverMsg, err?.response?.data);
-            Alert.alert('Payment Error', `Server: ${serverMsg}`);
-            setIsPaymentLoading(false);
+        } else {
+            try {
+                const priceNum = parseInt(course.price) || 0;
+
+                // Fetch latest profile to check coins balance
+                const profileRes = await userApi.getProfile(currentUser.uid);
+                const userCoins = profileRes.data?.user?.coins || 0;
+
+                if (userCoins < priceNum) {
+                    setIsPaymentLoading(false);
+                    Alert.alert(
+                        'Insufficient Coins',
+                        `This course costs ${priceNum} coins, but you only have ${userCoins} coins. Would you like to buy more?`,
+                        [
+                            { text: 'CANCEL', style: 'cancel' },
+                            { text: 'BUY COINS', onPress: () => router.push('/student/wallet') }
+                        ]
+                    );
+                    return;
+                }
+
+                // Confirm Purchase
+                Alert.alert(
+                    'CONFIRM PURCHASE',
+                    `Unlock this course for ${priceNum} Coins?`,
+                    [
+                        { text: 'CANCEL', onPress: () => setIsPaymentLoading(false), style: 'cancel' },
+                        {
+                            text: 'BUY NOW',
+                            onPress: async () => {
+                                try {
+                                    const res = await paymentApi.buyCourseWithCoins({
+                                        studentId: currentUser.uid,
+                                        courseId: course.id,
+                                        courseTitle: course.title,
+                                        price: priceNum,
+                                        teacherId: course.instructorId || course.userId,
+                                        studentName: currentUser.fullName || ''
+                                    });
+
+                                    if (res.data?.success) {
+                                        Alert.alert('Success', 'Course unlocked successfully!');
+                                        setIsEnrolled(true);
+                                        loadUserAndCourse();
+                                    } else {
+                                        Alert.alert('Error', res.data?.message || 'Transaction failed');
+                                    }
+                                } catch (e) {
+                                    Alert.alert('Error', 'Coin transaction failed. Please check your internet.');
+                                } finally {
+                                    setIsPaymentLoading(false);
+                                }
+                            }
+                        }
+                    ]
+                );
+
+            } catch (err: any) {
+                setIsPaymentLoading(false);
+                Alert.alert('Error', 'Could not process coin transaction.');
+            }
         }
     };
-
 
     if (isLoading) {
         return (
             <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-                <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 100 }} />
+                <ActivityIndicator size="large" color="#00AEEF" style={{ marginTop: 100 }} />
             </SafeAreaView>
         );
     }
@@ -219,7 +452,7 @@ export default function StudentCourseDetail() {
     if (!course) {
         return (
             <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-                <Text style={{ textAlign: 'center', marginTop: 50, color: colors.text }}>Course not found.</Text>
+                <Text style={{ textAlign: 'center', marginTop: 50, color: colors.textSecondary }}>COURSE NOT AVAILABLE.</Text>
             </SafeAreaView>
         );
     }
@@ -233,11 +466,60 @@ export default function StudentCourseDetail() {
 
     const isFree = !course.price || parseFloat(course.price) === 0;
 
+    const userReviewId = course?.reviews ? Object.keys(course.reviews).find(key => course.reviews[key].studentId === currentUser?.uid) : null;
+    const userReview = userReviewId ? course.reviews[userReviewId] : null;
+
+    const handleDownloadVideo = async (lectureId: string, lectureTitle: string, videoUrl: string) => {
+        if (!videoUrl) return Alert.alert('Error', 'Video URL not found.');
+
+        const callback = (downloadProgress: any) => {
+            const progress = (downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite) * 100;
+            setDownloadingVideos(prev => ({ ...prev, [lectureId]: progress }));
+        };
+
+        setDownloadingVideos(prev => ({ ...prev, [lectureId]: 0 }));
+        try {
+            let fileName = videoUrl.substring(videoUrl.lastIndexOf('/') + 1).split('?')[0];
+            if (!fileName.includes('.')) fileName += '.mp4';
+            const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+
+            const downloadResumable = FileSystem.createDownloadResumable(videoUrl, fileUri, {}, callback);
+            const downloadResumed = await downloadResumable.downloadAsync();
+
+            if (downloadResumed?.status === 200) {
+                const savedData = await AsyncStorage.getItem('downloaded_videos');
+                const downloaded = savedData ? JSON.parse(savedData) : [];
+                const existingIndex = downloaded.findIndex((item: any) => item.id === lectureId);
+                if (existingIndex > -1) downloaded.splice(existingIndex, 1);
+
+                downloaded.push({
+                    id: lectureId, title: lectureTitle, courseId: course.id,
+                    courseTitle: course.title, thumbnail: course.thumbnail,
+                    localUri: downloadResumed.uri, downloadedAt: Date.now()
+                });
+                await AsyncStorage.setItem('downloaded_videos', JSON.stringify(downloaded));
+                setDownloadedIds(prev => [...prev, lectureId]);
+                Alert.alert('Download Complete', `${lectureTitle} is now available offline.`);
+            } else {
+                Alert.alert('Download Failed', 'Could not save the video.');
+            }
+        } catch (error) {
+            console.error(error);
+            Alert.alert('Download Error', 'An error occurred during download.');
+        } finally {
+            setDownloadingVideos(prev => {
+                const updated = { ...prev };
+                delete updated[lectureId];
+                return updated;
+            });
+        }
+    };
+
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+            <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
             <AppHeader
-                title="Course Overview"
+                title="COURSE DETAILS"
                 showBack={true}
                 onBackPress={() => router.back()}
                 role="student"
@@ -246,73 +528,66 @@ export default function StudentCourseDetail() {
             <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
                 {/* Course Header */}
                 <View style={[styles.headerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <View style={[styles.imageBox, { backgroundColor: isDark ? '#1A2744' : '#F0F9FF' }]}>
+                    <View style={[styles.imageBox, { backgroundColor: isDark ? 'rgba(0, 174, 239, 0.1)' : 'rgba(0, 174, 239, 0.05)' }]}>
                         {course.thumbnail ? (
                             <Image source={{ uri: course.thumbnail }} style={styles.thumbnailImg} />
                         ) : (
-                            <Ionicons name="book" size={40} color={Colors.primary} />
+                            <Ionicons name="journal-outline" size={30} color="#00AEEF" />
                         )}
                     </View>
                     <View style={styles.headerInfo}>
-                        <View style={styles.tag}>
-                            <Text style={styles.tagText}>{course.category || 'General'}</Text>
+                        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                            <View style={[styles.tag, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }]}>
+                                <Text style={[styles.tagText, { color: colors.textSecondary }]}>{course.category || 'COURSE'}</Text>
+                            </View>
+                            <View style={[styles.tag, { backgroundColor: course.type === 'Live' ? '#00AEEF' : (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)') }]}>
+                                <Text style={[styles.tagText, { color: course.type === 'Live' ? '#000' : colors.textSecondary }]}>
+                                    {course.type === 'Live' ? 'LIVE COURSE' : 'RECORDED'}
+                                </Text>
+                            </View>
                         </View>
                         <Text style={[styles.title, { color: colors.text }]}>{course.title}</Text>
-                        <Text style={[styles.instructor, { color: colors.textSecondary }]}>By {course.instructorName || 'Expert Instructor'}</Text>
+                        <Text style={[styles.instructor, { color: colors.textSecondary }]}>By: {course.instructorName || 'Teacher'}</Text>
                     </View>
                 </View>
 
                 {/* Course Stats */}
                 <View style={[styles.statsBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.statItem}>
-                        <Ionicons name="layers-outline" size={18} color={Colors.grey} />
-                        <Text style={[styles.statLabel, { color: colors.text }]}>{modules.length} Modules</Text>
+                        <Ionicons name="layers-outline" size={16} color={colors.textSecondary} />
+                        <Text style={[styles.statLabel, { color: colors.text }]}>{modules.length} MODULES</Text>
                     </View>
                     <View style={styles.statItem}>
-                        <Ionicons name="pricetag-outline" size={18} color={Colors.grey} />
-                        <Text style={[styles.statLabel, { color: colors.text }]}>{isFree ? 'Free' : `$${course.price}`}</Text>
+                        <Ionicons name="hardware-chip-outline" size={16} color={colors.textSecondary} />
+                        <Text style={[styles.statLabel, { color: colors.text }]}>VERIFIED</Text>
                     </View>
                     {isEnrolled && (
-                        <View style={styles.enrolledBadge}>
-                            <Ionicons name="checkmark-circle" size={16} color="#16A34A" />
-                            <Text style={styles.enrolledText}>Enrolled</Text>
+                        <View style={styles.statItem}>
+                            <Ionicons name="checkmark-circle-outline" size={16} color="#00AEEF" />
+                            <Text style={[styles.statLabel, { color: '#00AEEF' }]}>ENROLLED</Text>
                         </View>
                     )}
                 </View>
 
-                {/* Enrollment Banner (if not enrolled and paid) */}
-                {!isEnrolled && !isFree && (
-                    <View style={[styles.payBanner, { backgroundColor: isDark ? '#1A1A2E' : '#FFF9E6' }]}>
-                        <View style={styles.payBannerLeft}>
-                            <Ionicons name="lock-closed" size={24} color={Colors.primary} />
-                            <View style={{ marginLeft: 12, flex: 1 }}>
-                                <Text style={[styles.payBannerTitle, { color: colors.text }]}>Unlock Full Course</Text>
-                                <Text style={[styles.payBannerSub, { color: colors.textSecondary }]}>
-                                    Pay ${course.price} to access all modules and lectures
-                                </Text>
-                            </View>
-                        </View>
-                    </View>
-                )}
-
                 {/* Curriculum */}
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>Curriculum</Text>
+                <View style={styles.sectionHeader}>
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>LECTURES</Text>
+                    <Text style={[styles.sectionSub, { color: colors.textSecondary }]}>List of all modules and lessons.</Text>
+                </View>
 
                 {modules.length > 0 ? (
                     modules.map((module: any, index) => (
                         <View key={module.id} style={[styles.moduleBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <View style={[styles.moduleHeader, { backgroundColor: isDark ? colors.surface : '#F9FAFB', borderBottomColor: colors.border, flexDirection: 'row', alignItems: 'center' }]}>
-                                {module.thumbnail && (
-                                    <View style={styles.moduleThumbBox}>
-                                        <Image source={{ uri: module.thumbnail }} style={styles.moduleThumbImg} />
-                                    </View>
-                                )}
+                            <View style={[styles.moduleHeader, { borderBottomColor: colors.border }]}>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={styles.moduleNumber}>Module {index + 1}</Text>
+                                    <Text style={styles.moduleNumber}>Part 0{index + 1}</Text>
                                     <Text style={[styles.moduleTitle, { color: colors.text }]}>{module.title}</Text>
                                 </View>
                                 {!isEnrolled && !isFree && (
-                                    <Ionicons name="lock-closed-outline" size={16} color={Colors.grey} />
+                                    <View style={styles.lockBadge}>
+                                        <Ionicons name="lock-closed" size={12} color="#00AEEF" />
+                                        <Text style={styles.lockText}>LOCKED</Text>
+                                    </View>
                                 )}
                             </View>
 
@@ -325,206 +600,242 @@ export default function StudentCourseDetail() {
                                         return (
                                             <TouchableOpacity
                                                 key={lKey}
-                                                style={[styles.lectureRow, isLocked && { opacity: 0.5 }]}
+                                                style={[styles.lectureRow, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)' }, isLocked && { opacity: 0.3 }]}
                                                 disabled={isLocked}
                                                 onPress={() => {
-                                                    if (isLocked) {
-                                                        Alert.alert('🔒 Locked', 'Please enroll to access this lecture.');
-                                                        return;
-                                                    }
                                                     if (lecture.type === 'Live') {
                                                         router.push('/student/live');
                                                     } else {
-                                                        // Check for ANY possible video URL field (url, videoUrl, video, link)
                                                         const videoLink = lecture.url || lecture.videoUrl || lecture.video || lecture.link;
-
-                                                        if (videoLink && videoLink.trim() !== '') {
+                                                        if (videoLink) {
                                                             setSelectedVideo(videoLink);
                                                         } else {
-                                                            Alert.alert('Video Not Found', 'The instructor has not uploaded a video for this lecture yet.');
+                                                            Alert.alert('NOT AVAILABLE', 'This video is not available right now.');
                                                         }
                                                     }
                                                 }}
                                             >
-                                                <View style={styles.lectureIcon}>
+                                                <View style={[styles.lectureIcon, { backgroundColor: isDark ? 'rgba(0, 174, 239, 0.1)' : 'rgba(0, 174, 239, 0.05)' }]}>
                                                     <Ionicons
-                                                        name={isLocked ? 'lock-closed' : lecture.type === 'Video' ? 'play-circle' : 'videocam'}
-                                                        size={20}
-                                                        color={isLocked ? Colors.grey : Colors.primary}
+                                                        name={lecture.type === 'Live' ? 'pulse' : (lecture.isRecorded ? 'videocam-outline' : 'play-outline')}
+                                                        size={18}
+                                                        color={isLocked ? colors.textSecondary : "#00AEEF"}
                                                     />
                                                 </View>
                                                 <View style={{ flex: 1 }}>
                                                     <Text style={[styles.lectureTitle, { color: colors.text }]}>{lecture.title}</Text>
-                                                    <Text style={styles.lectureMeta}>
-                                                        {lecture.type === 'Live' && lecture.scheduledAt
-                                                            ? `Scheduled: ${lecture.scheduledAt}`
-                                                            : `${lecture.duration || '00:00'} • ${lecture.type}`
-                                                        }
+                                                    <Text style={[styles.lectureMeta, { color: lecture.isRecorded ? '#00AEEF' : colors.textSecondary, fontWeight: lecture.isRecorded ? 'bold' : 'normal' }]}>
+                                                        {lecture.type === 'Live' ? 'LIVE CLASS' : (lecture.isRecorded ? 'Recorded Video' : `${lecture.duration || '00:00'}`)}
                                                     </Text>
                                                 </View>
-                                                <Ionicons name="chevron-forward" size={16} color={Colors.lightGrey} />
+                                                {(lecture.isRecorded || lecture.videoUrl || lecture.url) && !isLocked && (
+                                                    <View style={{ marginRight: 5, padding: 10 }}>
+                                                        {downloadedIds.includes(lKey) ? (
+                                                            <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                                                        ) : downloadingVideos[lKey] !== undefined ? (
+                                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                                                <ActivityIndicator size="small" color="#00AEEF" />
+                                                                <Text style={{ fontSize: 10, color: '#00AEEF', fontWeight: 'bold' }}>
+                                                                    {Math.round(downloadingVideos[lKey])}%
+                                                                </Text>
+                                                            </View>
+                                                        ) : (
+                                                            <TouchableOpacity
+                                                                onPress={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const videoLink = lecture.url || lecture.videoUrl || lecture.video || lecture.link;
+                                                                    handleDownloadVideo(lKey, lecture.title, videoLink);
+                                                                }}
+                                                            >
+                                                                <Ionicons name="download-outline" size={20} color="#00AEEF" />
+                                                            </TouchableOpacity>
+                                                        )}
+                                                    </View>
+                                                )}
+                                                <Ionicons name="chevron-forward" size={14} color={isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"} />
                                             </TouchableOpacity>
                                         );
                                     })
                                 ) : (
-                                    <Text style={styles.noLectures}>No lectures in this module.</Text>
+                                    <Text style={[styles.noLectures, { color: colors.textSecondary }]}>NO LECTURES FOUND.</Text>
                                 )}
                             </View>
                         </View>
                     ))
                 ) : (
-                    <View style={styles.emptyContent}>
-                        <Ionicons name="journal-outline" size={50} color={Colors.lightGrey} />
-                        <Text style={styles.emptyTitle}>Curriculum Coming Soon</Text>
-                        <Text style={styles.emptySub}>The instructor hasn't uploaded any content yet.</Text>
+                    <View style={[styles.emptyContent, { borderColor: colors.border }]}>
+                        <Ionicons name="cloud-offline-outline" size={50} color={isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.05)"} />
+                        <Text style={[styles.emptyTitle, { color: colors.text }]}>EMPTY COURSE</Text>
+                        <Text style={[styles.emptySub, { color: colors.textSecondary }]}>NO MODULES FOUND IN THIS COURSE.</Text>
                     </View>
                 )}
 
-                {/* Enroll/Access Button */}
-                {isEnrolled ? (
-                    <View style={[styles.enrolledBar, { backgroundColor: isDark ? '#0D3320' : '#F0FDF4' }]}>
-                        <Ionicons name="checkmark-circle" size={24} color="#16A34A" />
-                        <Text style={[styles.enrolledBarText, { color: '#16A34A' }]}>
-                            You're enrolled! Enjoy learning.
-                        </Text>
-                    </View>
-                ) : (
+                {/* Enrollment Button */}
+                {!isEnrolled && (
                     <TouchableOpacity
-                        style={[
-                            styles.actionBtn,
-                            { backgroundColor: '#FACC15' }, // Vibrant Yellow
-                            isPaymentLoading && { opacity: 0.7 }
-                        ]}
+                        style={[styles.actionBtn, isPaymentLoading && { opacity: 0.7 }]}
                         onPress={handleEnroll}
                         disabled={isPaymentLoading}
                     >
                         {isPaymentLoading ? (
-                            <ActivityIndicator color={isDark ? '#000' : '#FFF'} />
+                            <ActivityIndicator color="#000" />
                         ) : (
-                            <View style={styles.actionBtnInner}>
-                                <Ionicons
-                                    name={isFree ? 'rocket' : 'card'}
-                                    size={20}
-                                    color={isDark ? '#000' : '#FFF'}
-                                />
-                                <Text style={[styles.actionBtnText, { color: isDark ? '#000' : '#FFF' }]}>
-                                    {isFree ? 'Enroll for Free' : `Pay $${course.price} & Enroll`}
-                                </Text>
-                            </View>
+                            <Text style={styles.actionBtnText}>
+                                {isFree ? 'ENROLL FREE' : `JOIN WITH ${course.price} COINS`}
+                            </Text>
                         )}
                     </TouchableOpacity>
                 )}
+
+                {/* Review Section */}
+                {isEnrolled && (
+                    <View style={styles.reviewSection}>
+                        <View style={styles.sectionHeader}>
+                            <Text style={[styles.sectionTitle, { color: colors.text }]}>COURSE <Text style={{ color: '#00AEEF' }}>REVIEWS</Text></Text>
+                            <Text style={[styles.sectionSub, { color: colors.textSecondary }]}>What you think about this course.</Text>
+                        </View>
+                        {userReview ? (
+                            <View style={[styles.myReviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View style={styles.myReviewHeader}>
+                                    <Text style={[styles.myReviewName, { color: colors.text }]}>YOUR REVIEW</Text>
+                                    <View style={styles.starsRow}>
+                                        {[...Array(5)].map((_, i) => (
+                                            <Ionicons key={i} name={i < userReview.rating ? "star" : "star-outline"} size={14} color="#FBBF24" />
+                                        ))}
+                                    </View>
+                                </View>
+                                <Text style={[styles.myReviewText, { color: colors.textSecondary }]}>{userReview.text}</Text>
+                                <TouchableOpacity style={styles.deleteReviewBtn} onPress={handleDeleteReview}>
+                                    <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                                    <Text style={styles.deleteReviewText}>Delete Review</Text>
+                                </TouchableOpacity>
+                            </View>
+                        ) : (
+                            <View style={[styles.directReviewBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View style={styles.ratingSelect}>
+                                    {[1, 2, 3, 4, 5].map((star) => (
+                                        <TouchableOpacity key={star} onPress={() => setRating(star)}>
+                                            <Ionicons name={star <= rating ? "star" : "star-outline"} size={28} color="#FBBF24" style={{ marginHorizontal: 4 }} />
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                                <TextInput
+                                    style={[styles.reviewInputDirect, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                                    placeholder="Write your review here..."
+                                    placeholderTextColor={colors.textSecondary}
+                                    multiline
+                                    value={reviewText}
+                                    onChangeText={setReviewText}
+                                />
+                                <TouchableOpacity
+                                    style={[styles.submitReviewBtnDirect, isSubmittingReview && { opacity: 0.7 }]}
+                                    onPress={handleSubmitReview}
+                                    disabled={isSubmittingReview}
+                                >
+                                    {isSubmittingReview ? <ActivityIndicator color="#000" /> : <Text style={styles.submitReviewText}>Submit Review</Text>}
+                                </TouchableOpacity>
+                            </View>
+                        )}
+                    </View>
+                )}
             </ScrollView>
+            <Animated.View style={{ height: keyboardHeight }} />
 
             {/* Video Player Modal */}
             <Modal visible={!!selectedVideo} animationType="fade" transparent={true}>
                 <View style={styles.videoModalContainer}>
-                    <TouchableOpacity
-                        style={styles.videoOverlay}
-                        activeOpacity={1}
-                        onPress={() => setSelectedVideo(null)}
-                    />
-
-                    <View style={styles.videoFullBox}>
+                    <TouchableOpacity style={styles.videoOverlay} activeOpacity={1} onPress={() => setSelectedVideo(null)} />
+                    <View style={[styles.videoFullBox, { backgroundColor: '#000' }]}>
                         <View style={styles.videoTopHeader}>
-                            <Text style={styles.videoHeaderTitle} numberOfLines={1}>
-                                {typeof selectedVideo === 'object' && selectedVideo?.title ? selectedVideo.title : 'Course Preview'}
-                            </Text>
-                            <TouchableOpacity style={styles.closeVideoBtn} onPress={() => setSelectedVideo(null)}>
-                                <Ionicons name="close" size={24} color="#FFF" />
+                            <Text style={styles.videoHeaderTitle}>VIDEO PLAYER</Text>
+                            <TouchableOpacity style={styles.closeVideoBtn} onPress={() => {
+                                setSelectedVideo(null);
+                                player.pause();
+                            }}>
+                                <Ionicons name="close" size={24} color="#00AEEF" />
                             </TouchableOpacity>
                         </View>
-
                         <View style={styles.videoContainer}>
-                            {selectedVideo && (
-                                <Video
-                                    source={{ uri: typeof selectedVideo === 'string' ? selectedVideo : selectedVideo.videoUrl }}
-                                    rate={1.0}
-                                    volume={1.0}
-                                    isMuted={false}
-                                    resizeMode={ResizeMode.CONTAIN}
-                                    shouldPlay
-                                    useNativeControls
-                                    onPlaybackStatusUpdate={(status) => handlePlaybackStatusUpdate(status, typeof selectedVideo === 'string' ? selectedVideo : selectedVideo.id || selectedVideo.videoUrl)}
-                                    progressUpdateIntervalMillis={2000}
-                                    positionMillis={videoProgressMap[typeof selectedVideo === 'string' ? selectedVideo : selectedVideo.id || selectedVideo.videoUrl] || 0}
-                                    style={styles.playerStyle}
-                                />
+                            {videoSourceString && (
+                                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                                    {isVideoLoading && (
+                                        <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', zIndex: 1, backgroundColor: '#000' }]}>
+                                            <ActivityIndicator size="large" color="#00AEEF" />
+                                            <Text style={{ color: '#00AEEF', marginTop: 10, fontSize: 12, letterSpacing: 1 }}>LOADING VIDEO...</Text>
+                                        </View>
+                                    )}
+                                    <VideoView
+                                        player={player}
+                                        style={styles.playerStyle}
+                                        allowsFullscreen
+                                        allowsPictureInPicture
+                                    />
+                                </View>
                             )}
                         </View>
                     </View>
                 </View>
             </Modal>
+
+
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F9FAFB' },
-    content: { padding: 20, paddingBottom: 50 },
-    headerCard: { flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 24, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: '#F0F0F0' },
-    imageBox: { width: 80, height: 80, borderRadius: 20, backgroundColor: '#F0F9FF', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+    container: { flex: 1 },
+    content: { paddingHorizontal: 32, paddingTop: 40, paddingBottom: 100 },
+    headerCard: { flexDirection: 'row', borderRadius: 24, padding: 24, marginBottom: 25, borderWidth: 1 },
+    imageBox: { width: 80, height: 80, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 20 },
     headerInfo: { flex: 1, justifyContent: 'center' },
-    tag: { backgroundColor: '#F0FDF4', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start', marginBottom: 6 },
-    tagText: { fontSize: 10, fontWeight: 'bold', color: '#16A34A' },
-    title: { fontSize: 20, fontWeight: 'bold', color: Colors.secondary, marginBottom: 4 },
-    instructor: { fontSize: 13, color: Colors.grey },
-    statsBar: { flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 16, padding: 15, marginBottom: 20, gap: 20, borderWidth: 1, borderColor: '#F0F0F0', alignItems: 'center' },
-    statItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    statLabel: { fontSize: 13, fontWeight: '600' },
-    enrolledBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 'auto', backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-    enrolledText: { fontSize: 12, fontWeight: 'bold', color: '#16A34A' },
-    payBanner: { padding: 16, borderRadius: 16, marginBottom: 20, flexDirection: 'row', alignItems: 'center' },
-    payBannerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-    payBannerTitle: { fontSize: 15, fontWeight: 'bold', marginBottom: 2 },
-    payBannerSub: { fontSize: 12 },
-    sectionTitle: { fontSize: 18, fontWeight: 'bold', color: Colors.secondary, marginBottom: 15 },
-    moduleBox: { backgroundColor: '#FFF', borderRadius: 20, marginBottom: 15, overflow: 'hidden', borderWidth: 1, borderColor: '#F0F0F0' },
-    moduleHeader: { backgroundColor: '#F9FAFB', padding: 15, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-    moduleNumber: { fontSize: 11, fontWeight: 'bold', color: Colors.primary, marginBottom: 2 },
-    moduleTitle: { fontSize: 16, fontWeight: 'bold', color: Colors.secondary },
-    lectureList: { padding: 10 },
-    lectureRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12, backgroundColor: '#FFF', marginBottom: 5 },
-    lectureIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F0F9FF', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-    lectureTitle: { fontSize: 14, fontWeight: '600' },
-    lectureMeta: { fontSize: 11, color: Colors.grey, marginTop: 1 },
-    noLectures: { textAlign: 'center', padding: 20, color: Colors.grey, fontSize: 13 },
-    emptyContent: { alignItems: 'center', marginTop: 30, backgroundColor: '#FFF', padding: 40, borderRadius: 24, borderStyle: 'dashed', borderWidth: 2, borderColor: '#EEE' },
-    emptyTitle: { fontSize: 16, fontWeight: 'bold', color: Colors.secondary, marginTop: 15 },
-    emptySub: { fontSize: 13, color: Colors.grey, textAlign: 'center', marginTop: 5 },
-    actionBtn: { backgroundColor: Colors.secondary, padding: 18, borderRadius: 16, alignItems: 'center', marginTop: 20 },
-    actionBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-    actionBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
-    enrolledBar: { flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 16, marginTop: 20, justifyContent: 'center', gap: 10 },
-    enrolledBarText: { fontSize: 16, fontWeight: 'bold' },
-    thumbnailImg: { width: '100%', height: '100%', borderRadius: 20 },
-    moduleThumbBox: { width: 50, height: 50, borderRadius: 10, marginRight: 12, overflow: 'hidden' },
-    moduleThumbImg: { width: '100%', height: '100%' },
-    // Video Modal Styles
-    videoModalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center' },
-    videoBox: { width: '100%', height: 300, backgroundColor: '#000' },
-    videoHeader: { position: 'absolute', top: -50, right: 10, zIndex: 10 },
-    closeVideo: { padding: 10 },
-    modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-    paymentPopUp: { width: '100%', maxWidth: 450, height: 450, borderRadius: 30, borderWidth: 1, overflow: 'hidden', elevation: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20 },
-    webviewHeader: { flexDirection: 'row', alignItems: 'center', padding: 15, borderBottomWidth: 1 },
-    webviewTitle: { fontSize: 18, fontWeight: 'bold' },
-    webviewSubTitle: { fontSize: 12, marginTop: 2 },
-    closeModalBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.05)', justifyContent: 'center', alignItems: 'center' },
-    webViewWrapper: { flex: 1 },
-    webviewLoading: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 5 },
-    paymentFooter: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 15, gap: 6 },
-    secureText: { fontSize: 11, color: Colors.grey, fontWeight: '600' },
-    // New Video Modal Styles
-    videoOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.85)' },
-    videoFullBox: { width: '92%', backgroundColor: '#111', borderRadius: 24, overflow: 'hidden', elevation: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 15 }, shadowOpacity: 0.5, shadowRadius: 25 },
-    videoTopHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: '#1A1A1A' },
-    videoHeaderTitle: { color: '#FFF', fontSize: 16, fontWeight: 'bold', flex: 1, marginRight: 15 },
-    closeVideoBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
-    videoContainer: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' },
+    tag: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, alignSelf: 'flex-start', marginBottom: 8 },
+    tagText: { fontSize: 8, fontWeight: '900', letterSpacing: 0.5 },
+    title: { fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
+    instructor: { fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+    sectionHeader: { marginBottom: 25 },
+    sectionTitle: { fontSize: 16, fontWeight: '900', letterSpacing: 1.5, fontFamily: Platform.OS === 'ios' ? 'Space Grotesk' : 'SpaceGrotesk-Bold' },
+    sectionSub: { fontSize: 9, marginTop: 8, fontWeight: '700', letterSpacing: 0.5 },
+    moduleBox: { borderRadius: 24, marginBottom: 20, overflow: 'hidden', borderWidth: 1 },
+    moduleHeader: { padding: 20, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center' },
+    moduleNumber: { fontSize: 8, fontWeight: '900', color: '#00AEEF', marginBottom: 6, letterSpacing: 1 },
+    moduleTitle: { fontSize: 14, fontWeight: '900', letterSpacing: 1 },
+    lockBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0, 174, 239, 0.1)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+    lockText: { fontSize: 8, fontWeight: '900', color: '#00AEEF', letterSpacing: 0.5 },
+    lectureList: { padding: 12 },
+    lectureRow: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 16, marginBottom: 8 },
+    lectureIcon: { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+    lectureTitle: { fontSize: 13, fontWeight: '600' },
+    lectureMeta: { fontSize: 9, marginTop: 2, fontWeight: '900', letterSpacing: 0.5 },
+    noLectures: { textAlign: 'center', padding: 25, fontSize: 10, fontWeight: '900' },
+    emptyContent: { alignItems: 'center', padding: 50, borderRadius: 24, borderStyle: 'dashed', borderWidth: 1 },
+    emptyTitle: { fontSize: 14, fontWeight: '900', marginTop: 15, letterSpacing: 2 },
+    emptySub: { fontSize: 10, textAlign: 'center', marginTop: 10, fontWeight: '700', letterSpacing: 0.5, lineHeight: 16 },
+    actionBtn: { backgroundColor: '#00AEEF', height: 62, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 20 },
+    actionBtnText: { color: '#000', fontSize: 12, fontWeight: '900', letterSpacing: 2 },
+    thumbnailImg: { width: '100%', height: '100%', borderRadius: 16 },
+    videoModalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center' },
+    videoOverlay: { ...StyleSheet.absoluteFillObject },
+    videoFullBox: { width: '100%' },
+    videoTopHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 32 },
+    videoHeaderTitle: { color: '#00AEEF', fontSize: 10, fontWeight: '900', letterSpacing: 3 },
+    closeVideoBtn: { padding: 5 },
+    videoContainer: { width: '100%', aspectRatio: 16 / 9 },
     playerStyle: { width: '100%', height: '100%' },
-    videoFooter: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: '#1A1A1A', gap: 8, justifyContent: 'center' },
-    videoFooterText: { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '500' },
+    reviewSection: { marginTop: 40 },
+    myReviewCard: { padding: 20, borderRadius: 16, borderWidth: 1, marginTop: 15 },
+    myReviewHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+    myReviewName: { fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+    starsRow: { flexDirection: 'row' },
+    myReviewText: { fontSize: 13, lineHeight: 20 },
+    deleteReviewBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 15, alignSelf: 'flex-start' },
+    deleteReviewText: { color: '#EF4444', fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+    submitReviewText: { color: '#000', fontSize: 11, fontWeight: '900', letterSpacing: 1 },
+    directReviewBox: { padding: 20, borderRadius: 24, borderWidth: 1, marginTop: 15 },
+    reviewInputDirect: { height: 100, borderWidth: 1, borderRadius: 12, padding: 15, textAlignVertical: 'top', fontSize: 14, marginTop: 15 },
+    submitReviewBtnDirect: { backgroundColor: '#00AEEF', padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 15 },
+    statsBar: { flexDirection: 'row', flexWrap: 'wrap', borderRadius: 16, padding: 20, marginBottom: 35, alignItems: 'center', gap: 10, borderWidth: 1 },
+    statItem: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 5 },
+    ratingSelect: { flexDirection: 'row', justifyContent: 'center' },
+    statLine: { width: 1, height: 15 },
+    statLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 1, flexShrink: 1 },
 });
-
-

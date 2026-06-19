@@ -144,6 +144,90 @@ router.get('/:id', async (req, res) => {
     }
 });
 
+// Get course analytics (teacher)
+router.get('/:id/analytics', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const dbRef = ref(rtdb);
+        const snapshot = await get(child(dbRef, `courses/${id}`));
+        if (!snapshot.exists()) {
+            return res.status(404).json({ success: false, message: 'Course not found' });
+        }
+
+        let totalStudents = 0;
+        let totalHours = 0;
+        let chartData = [];
+
+        // 1. Scan the global enrollments root node
+        const enrollmentsSnap = await get(child(dbRef, 'enrollments'));
+        if (enrollmentsSnap.exists()) {
+            const allEnrollments = enrollmentsSnap.val();
+
+            let totalSeconds = 0;
+            const studentsEnrolled = [];
+
+            // 2. Iterate dynamically over any student who has this courseId registered
+            for (const studentId in allEnrollments) {
+                if (allEnrollments[studentId][id]) {
+                    const enrollmentData = allEnrollments[studentId][id];
+                    studentsEnrolled.push(enrollmentData);
+
+                    // Look for detailed module progress within the enrollment record
+                    if (enrollmentData.progress) {
+                        Object.values(enrollmentData.progress).forEach(prog => {
+                            // Support multiple watch progress variables used across branches
+                            if (prog.durationWatched) {
+                                totalSeconds += parseInt(prog.durationWatched, 10);
+                            } else if (prog.watchedSeconds) {
+                                totalSeconds += parseInt(prog.watchedSeconds, 10);
+                            }
+                        });
+                    }
+                }
+            }
+
+            totalStudents = studentsEnrolled.length;
+
+            let totalDurationStr = "0s";
+            if (totalSeconds > 0) {
+                const h = Math.floor(totalSeconds / 3600);
+                const m = Math.floor((totalSeconds % 3600) / 60);
+                const s = totalSeconds % 60;
+
+                if (h > 0) totalDurationStr = `${h}h ${m}m ${s}s`;
+                else if (m > 0) totalDurationStr = `${m}m ${s}s`;
+                else totalDurationStr = `${s}s`;
+            }
+            totalHours = totalDurationStr; // re-purposing variable for the frontend
+
+        } // Close enrollmentsSnap check
+
+        const courseData = snapshot.val();
+        const basePrice = parseFloat(courseData.price) || 200;
+        const commissionPercent = 45;
+        const totalEarnings = basePrice * totalStudents;
+        const commissionAmount = (totalEarnings * commissionPercent) / 100;
+        const netEarnings = totalEarnings - commissionAmount;
+
+        res.json({
+            success: true,
+            analytics: {
+                totalStudents,
+                totalHours,
+                thumbnail: courseData.thumbnail || null,
+                coursePrice: basePrice,
+                totalEarnings,
+                commissionPercent,
+                commissionAmount,
+                netEarnings
+            }
+        });
+    } catch (err) {
+        console.error('Analytics Error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // Create course (teacher)
 router.post('/create', async (req, res) => {
     const { title, instructorId, ...extraInfo } = req.body;
@@ -194,6 +278,62 @@ router.post('/lecture/add', async (req, res) => {
             scheduledAt: scheduledAt || null,
             createdAt: Date.now(),
         });
+
+        // Broadcast notifications exclusively for Scheduled Live Classes
+        if (type === 'Live' && scheduledAt) {
+            const dbRef = ref(rtdb);
+
+            // 1. ADD TO FLAT SCHEDULE INDEX (For High Performance Cron)
+            const scheduleRef = ref(rtdb, `scheduled_lives/${newLectureRef.key}`);
+            await set(scheduleRef, {
+                lectureId: newLectureRef.key,
+                courseId,
+                moduleId,
+                title: lectureTitle,
+                scheduledAt,
+                preNotified: false,
+                createdAt: Date.now()
+            });
+
+            const courseSnap = await get(child(dbRef, `courses/${courseId}`));
+            if (courseSnap.exists()) {
+                const courseInfo = courseSnap.val();
+
+                // Alert every enrolled student instantly that a Live is scheduled
+                const enrollmentsSnap = await get(child(dbRef, 'enrollments'));
+                if (enrollmentsSnap.exists()) {
+                    const allEnrollments = enrollmentsSnap.val();
+                    for (const studentId in allEnrollments) {
+                        if (allEnrollments[studentId][courseId]) {
+                            const notifRef = push(child(dbRef, `notifications/${studentId}`));
+                            set(notifRef, {
+                                title: `🔴 Live Class Scheduled!`,
+                                message: `Your instructor scheduled a live class: "${lectureTitle}" on ${scheduledAt}.`,
+                                type: 'live-scheduled',
+                                courseId,
+                                isRead: false,
+                                timestamp: Date.now()
+                            });
+                        }
+                    }
+                }
+
+                // Embed actionable Go Live button on teacher's notification timeline
+                if (courseInfo.instructorId) {
+                    const tNotifRef = push(child(dbRef, `notifications/${courseInfo.instructorId}`));
+                    set(tNotifRef, {
+                        title: `⏰ Live Control Ready`,
+                        message: `"${lectureTitle}" is scheduled on ${scheduledAt}. Press Action to start streaming!`,
+                        type: 'teacher-go-live',
+                        courseId,
+                        lectureTitle,
+                        isRead: false,
+                        timestamp: Date.now()
+                    });
+                }
+            }
+        }
+
         res.status(201).json({ success: true, lectureId: newLectureRef.key });
     } catch (err) {
         res.status(400).json({ success: false, message: err.message });
@@ -332,6 +472,101 @@ router.get('/teacher-students/:teacherId', async (req, res) => {
         res.json({ success: true, students });
     } catch (err) {
         console.error('Error in teacher-students API:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Update course title (teacher)
+router.put('/update/:id', async (req, res) => {
+    const { id } = req.params;
+    const { title } = req.body;
+    try {
+        const dbRef = ref(rtdb);
+
+        // 1. Update main course title
+        await set(child(dbRef, `courses/${id}/title`), title);
+
+        // 2. Update de-normalized courseTitle in teacherStudents (Optional but better for UI consistency)
+        const courseSnap = await get(child(dbRef, `courses/${id}`));
+        if (courseSnap.exists()) {
+            const courseData = courseSnap.val();
+            const teacherId = courseData.instructorId;
+            if (teacherId) {
+                const teacherStudentsRef = ref(rtdb, `teacherStudents/${teacherId}`);
+                const studentsSnap = await get(teacherStudentsRef);
+                if (studentsSnap.exists()) {
+                    const students = studentsSnap.val();
+                    for (const studentId in students) {
+                        if (students[studentId].courseId === id) {
+                            await set(ref(rtdb, `teacherStudents/${teacherId}/${studentId}/courseTitle`), title);
+                        }
+                    }
+                }
+            }
+        }
+
+        res.json({ success: true, message: 'Course updated successfully' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Update module title (teacher)
+router.put('/module/update/:courseId/:moduleId', async (req, res) => {
+    const { courseId, moduleId } = req.params;
+    const { title } = req.body;
+    try {
+        const dbRef = ref(rtdb);
+        await set(child(dbRef, `courses/${courseId}/modules/${moduleId}/title`), title);
+        res.json({ success: true, message: 'Module updated successfully' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Mark lecture as completed (teacher)
+router.post('/lecture/mark-completed', async (req, res) => {
+    const { courseId, moduleId, lectureId } = req.body;
+    try {
+        const path = `courses/${courseId}/modules/${moduleId}/lectures/${lectureId}`;
+        const { update } = require('firebase/database');
+        await update(ref(rtdb, path), { isCompleted: true });
+
+        // Also remove from scheduled lives flat index
+        await remove(ref(rtdb, `scheduled_lives/${lectureId}`));
+
+        res.json({ success: true, message: 'Lecture marked as completed' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Add course review (student)
+router.post('/reviews/add', async (req, res) => {
+    const { courseId, studentId, studentName, rating, text } = req.body;
+    try {
+        const reviewsRef = ref(rtdb, `courses/${courseId}/reviews`);
+        const newReviewRef = push(reviewsRef);
+        await set(newReviewRef, {
+            studentId,
+            studentName,
+            rating,
+            text,
+            createdAt: Date.now()
+        });
+        res.status(201).json({ success: true, reviewId: newReviewRef.key });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Delete course review (student/teacher)
+router.delete('/reviews/:courseId/:reviewId', async (req, res) => {
+    const { courseId, reviewId } = req.params;
+    try {
+        await remove(ref(rtdb, `courses/${courseId}/reviews/${reviewId}`));
+        res.json({ success: true, message: 'Review deleted successfully' });
+    } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
 });

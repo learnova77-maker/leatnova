@@ -4,14 +4,17 @@ import { courseApi } from '@/constants/api';
 import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    Dimensions,
     FlatList,
-    Image,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -20,6 +23,7 @@ import {
     ScrollView,
     StatusBar,
     StyleSheet,
+    Switch,
     Text,
     TextInput,
     TouchableOpacity,
@@ -35,6 +39,8 @@ interface Lecture {
     url?: string;
     videoUrl?: string; // For uploaded videos
     scheduledAt?: string;
+    isUploading?: boolean;
+    uploadProgress?: number;
 }
 
 interface Module {
@@ -43,6 +49,18 @@ interface Module {
     thumbnail?: string; // Added thumbnail
     lectures: Lecture[];
 }
+
+const btoa = (input: string) => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+    let str = input;
+    let output = '';
+    for (let block = 0, charCode, i = 0, map = chars; str.charAt(i | 0) || (map = '=', i % 1); output += map.charAt(63 & block >> 8 - i % 1 * 8)) {
+        charCode = str.charCodeAt(i += 3 / 4);
+        if (charCode > 0xFF) { throw new Error("'btoa' failed: The string to be encoded contains characters outside of the Latin1 range."); }
+        block = block << 8 | charCode;
+    }
+    return output;
+};
 
 export default function TeacherCourses() {
     const router = useRouter();
@@ -57,24 +75,69 @@ export default function TeacherCourses() {
 
     // State for Modules
     const [modules, setModules] = useState<Module[]>([]);
+    const [courseInfo, setCourseInfo] = useState<any>(null);
+    const [selectedPreviewVideo, setSelectedPreviewVideo] = useState<string | null>(null);
+    const [isPreviewLoading, setIsPreviewLoading] = useState(true);
+
+    const previewPlayer = useVideoPlayer(selectedPreviewVideo, player => {
+        if (selectedPreviewVideo) {
+            player.loop = false;
+            player.play();
+        }
+    });
+
+    useEffect(() => {
+        const statusSub = previewPlayer.addListener('statusChange', ({ status }) => {
+            if (status === 'readyToPlay') {
+                setIsPreviewLoading(false);
+            }
+        });
+
+        const playingSub = previewPlayer.addListener('playingChange', (isPlaying) => {
+            if (isPlaying) setIsPreviewLoading(false);
+        });
+
+        const timeSub = previewPlayer.addListener('timeUpdate', (event) => {
+            if (isPreviewLoading && event.currentTime > 0) {
+                setIsPreviewLoading(false);
+            }
+        });
+
+        return () => {
+            statusSub.remove();
+            playingSub.remove();
+            timeSub.remove();
+        };
+    }, [previewPlayer, isPreviewLoading]);
+
+    useEffect(() => {
+        if (selectedPreviewVideo) {
+            setIsPreviewLoading(true);
+        }
+    }, [selectedPreviewVideo]);
 
     const fetchCurriculum = async () => {
         setIsFetching(true);
         try {
             const response = await courseApi.getCourseDetails(currentCourseId);
-            if (response.data.success && response.data.course.modules) {
-                const modulesData = response.data.course.modules;
-                const formattedModules = Object.keys(modulesData).map(mKey => ({
-                    id: mKey,
-                    title: modulesData[mKey].title,
-                    lectures: modulesData[mKey].lectures
-                        ? Object.keys(modulesData[mKey].lectures).map(lKey => ({
-                            id: lKey,
-                            ...modulesData[mKey].lectures[lKey]
-                        }))
-                        : []
-                }));
-                setModules(formattedModules);
+            if (response.data.success) {
+                const courseData = response.data.course;
+                setCourseInfo(courseData);
+
+                if (courseData.modules) {
+                    const modulesData = courseData.modules;
+                    const formattedModules = Object.keys(modulesData).map(mKey => ({
+                        id: mKey,
+                        title: modulesData[mKey].title,
+                        lectures: modulesData[mKey].lectures
+                            ? Object.keys(modulesData[mKey].lectures).map(lKey => ({
+                                id: lKey,
+                                ...modulesData[mKey].lectures[lKey]
+                            }))
+                            : []
+                    }));
+                    setModules(formattedModules);
+                }
             }
         } catch (err) {
             console.error('Error fetching curriculum:', err);
@@ -105,8 +168,39 @@ export default function TeacherCourses() {
     const [lectureVideo, setLectureVideo] = useState<string | null>(null); // For uploaded file
     const [lectureDuration, setLectureDuration] = useState('');
     const [lectureType, setLectureType] = useState<'Video' | 'Live' | 'PDF'>('Video');
+    const [uploadProgress, setUploadProgress] = useState(0); // For video upload progress
+    const [compressionProgress, setCompressionProgress] = useState(0); // For compression progress
+    const [isCompressing, setIsCompressing] = useState(false);
+    const [uploadTaskRef, setUploadTaskRef] = useState<any>(null); // For canceling firebase upload
     const [scheduledAt, setScheduledAt] = useState('');
     const [isPreviewFree, setIsPreviewFree] = useState(false);
+    const [isLiveToggle, setIsLiveToggle] = useState(false);
+    const [liveDate, setLiveDate] = useState(new Date().toISOString().split('T')[0]);
+    const [liveTime, setLiveTime] = useState('10:00 AM');
+    const [showCalendarModal, setShowCalendarModal] = useState(false);
+    const [showTimeModal, setShowTimeModal] = useState(false);
+    const [isManualTimeMode, setIsManualTimeMode] = useState(false);
+    const [isManualDateMode, setIsManualDateMode] = useState(false);
+
+    // Generate next 14 days for date selection
+    const getNext14Days = () => {
+        const days: any[] = [];
+        for (let i = 0; i < 14; i++) {
+            const date = new Date();
+            date.setDate(date.getDate() + i);
+            days.push({
+                full: date.toISOString().split('T')[0],
+                dayNum: date.getDate(),
+                dayName: date.toLocaleDateString('en-US', { weekday: 'short' }),
+                month: date.toLocaleDateString('en-US', { month: 'short' })
+            });
+        }
+        return days;
+    };
+
+    const formatScheduleDate = () => {
+        return `${liveDate} ${liveTime}`.trim();
+    };
 
     // --- Media Picking ---
     const pickModuleImage = async () => {
@@ -135,8 +229,11 @@ export default function TeacherCourses() {
         setIsLoading(true);
         try {
             if (editingModule) {
-                // Mock update for now
-                setModules(modules.map(m => m.id === editingModule.id ? { ...m, title: moduleTitle } : m));
+                const response = await courseApi.updateModule(currentCourseId, editingModule.id, { title: moduleTitle });
+                if (response.data.success) {
+                    setModules(modules.map(m => m.id === editingModule.id ? { ...m, title: moduleTitle, thumbnail: moduleThumbnail || undefined } : m));
+                    Alert.alert('Success', 'Module updated successfully!');
+                }
             } else {
                 const response = await courseApi.addModule({
                     courseId: currentCourseId,
@@ -202,66 +299,198 @@ export default function TeacherCourses() {
     };
 
     // --- Lecture Actions ---
-    const handleAddLecture = async () => {
+    const handleAddLecture = () => {
         if (!lectureTitle.trim() || !activeModuleId) return;
 
-        setIsLoading(true);
-        try {
-            let finalVideoUrl = lectureUrl;
+        const targetModuleId = activeModuleId;
+        const tempId = `temp_${Date.now()}`;
+        const isLive = isLiveToggle;
 
-            // 1. IF teacher selected a local file, UPLOAD it to Firebase Storage first
-            if (lectureVideo && lectureVideo.startsWith('file://')) {
-                const { getStorage, ref: sRef, uploadBytes, getDownloadURL } = require('firebase/storage');
-                const storage = getStorage();
-                const filename = `lectures/${currentCourseId}/${Date.now()}.mp4`;
-                const storageRef = sRef(storage, filename);
+        const tempLecture: Lecture = {
+            id: tempId,
+            title: lectureTitle,
+            duration: lectureDuration || '00:00',
+            type: isLive ? 'Live' : lectureType,
+            isPreviewFree,
+            url: lectureVideo || lectureUrl || '',
+            scheduledAt: isLive ? formatScheduleDate() : '',
+            isUploading: true,
+            uploadProgress: 0,
+        };
 
-                const response = await fetch(lectureVideo);
-                const blob = await response.blob();
+        // Instantly add to state so UI updates
+        setModules(prev => prev.map(m =>
+            m.id === targetModuleId ? { ...m, lectures: [...m.lectures, tempLecture] } : m
+        ));
 
-                const uploadResult = await uploadBytes(storageRef, blob);
-                finalVideoUrl = await getDownloadURL(uploadResult.ref);
-                console.log('Video uploaded successfully:', finalVideoUrl);
-            }
+        // Start Background Process
+        const backgroundProcess = async () => {
+            try {
+                let finalVideoUrl = lectureUrl;
+                let calculatedDuration = tempLecture.duration;
 
-            const lectureData = {
-                courseId: currentCourseId,
-                moduleId: activeModuleId,
-                lectureTitle,
-                duration: lectureDuration || '00:00',
-                type: lectureType,
-                isPreviewFree,
-                url: finalVideoUrl, // Use the uploaded URL or the manually entered one
-                scheduledAt: lectureType === 'Live' ? scheduledAt : ''
-            };
+                if (lectureVideo && !lectureVideo.startsWith('http')) {
+                    let finalUri = lectureVideo;
+                    if (Platform.OS === 'android' && !finalUri.startsWith('file://') && !finalUri.startsWith('content://')) {
+                        finalUri = 'file://' + finalUri;
+                    }
 
-            const response = await courseApi.addLecture(lectureData);
+                    // Mux Integration
+                    const MUX_TOKEN_ID = process.env.EXPO_PUBLIC_MUX_TOKEN_ID || 'dummy_token_id';
+                    const MUX_TOKEN_SECRET = process.env.EXPO_PUBLIC_MUX_TOKEN_SECRET || 'dummy_token_secret';
+                    const authString = btoa(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`);
 
-            if (response.data.success) {
-                const newLecture: Lecture = {
-                    id: response.data.lectureId,
-                    title: lectureTitle,
-                    duration: lectureDuration || '00:00',
-                    type: lectureType,
-                    isPreviewFree: isPreviewFree,
+                    let uploadUrl = '';
+                    let uploadId = '';
+
+                    try {
+                        const muxRes = await fetch('https://api.mux.com/video/v1/uploads', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Basic ${authString}`
+                            },
+                            body: JSON.stringify({
+                                cors_origin: "*",
+                                new_asset_settings: {
+                                    playback_policy: ["public"],
+                                    video_quality: "basic"
+                                }
+                            })
+                        });
+                        const muxData = await muxRes.json();
+                        if (muxData.data && muxData.data.url) {
+                            uploadUrl = muxData.data.url;
+                            uploadId = muxData.data.id;
+                        } else {
+                            throw new Error("Failed to get Mux upload URL");
+                        }
+                    } catch (e) {
+                        throw new Error("Could not initialize Mux upload");
+                    }
+
+                    const uploadTask = FileSystem.createUploadTask(
+                        uploadUrl,
+                        finalUri,
+                        {
+                            httpMethod: 'PUT',
+                            uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+                            headers: { 'Content-Type': 'video/mp4' }
+                        },
+                        (progressEvent) => {
+                            const actualProgress = Math.round((progressEvent.totalBytesSent / progressEvent.totalBytesExpectedToSend) * 100);
+                            const progress = Math.min(actualProgress, 95);
+
+                            setModules(prev => prev.map(m =>
+                                m.id === targetModuleId ? {
+                                    ...m,
+                                    lectures: m.lectures.map(l =>
+                                        l.id === tempId ? { ...l, uploadProgress: progress } : l
+                                    )
+                                } : m
+                            ));
+                        }
+                    );
+
+                    const uploadRes = await uploadTask.uploadAsync();
+                    if (!uploadRes || uploadRes.status < 200 || uploadRes.status >= 300) {
+                        throw new Error(`Mux Upload Error: ${uploadRes?.status} - ${uploadRes?.body}`);
+                    }
+
+                    // Poll Mux for playback ID
+                    let assetId = null;
+                    let playbackId = null;
+                    let attempts = 0;
+
+                    while (!playbackId && attempts < 20) {
+                        setModules(prev => prev.map(m =>
+                            m.id === targetModuleId ? {
+                                ...m,
+                                lectures: m.lectures.map(l =>
+                                    l.id === tempId ? { ...l, uploadProgress: 95 + (Math.min(attempts, 4)) } : l
+                                )
+                            } : m
+                        ));
+
+                        await new Promise(r => setTimeout(r, 2500));
+                        attempts++;
+                        try {
+                            const statusReq = await fetch(`https://api.mux.com/video/v1/uploads/${uploadId}`, {
+                                headers: { Authorization: `Basic ${authString}` }
+                            });
+                            const statusData = await statusReq.json();
+                            if (statusData.data?.asset_id) {
+                                assetId = statusData.data.asset_id;
+
+                                const assetReq = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
+                                    headers: { Authorization: `Basic ${authString}` }
+                                });
+                                const assetData = await assetReq.json();
+                                if (assetData.data?.playback_ids && assetData.data.playback_ids.length > 0) {
+                                    playbackId = assetData.data.playback_ids[0].id;
+                                    if (assetData.data.duration) {
+                                        calculatedDuration = `${Math.floor(assetData.data.duration / 60).toString().padStart(2, '0')}:${Math.floor(assetData.data.duration % 60).toString().padStart(2, '0')}`;
+                                    }
+                                }
+                            }
+                        } catch (e) { }
+                    }
+
+                    if (playbackId) {
+                        finalVideoUrl = `https://stream.mux.com/${playbackId}.m3u8`;
+                    } else {
+                        throw new Error("Mux video processing timed out");
+                    }
+                }
+
+                const lectureData = {
+                    courseId: currentCourseId,
+                    moduleId: targetModuleId,
+                    lectureTitle: tempLecture.title,
+                    duration: calculatedDuration,
+                    type: tempLecture.type,
+                    isPreviewFree: tempLecture.isPreviewFree,
                     url: finalVideoUrl,
-                    scheduledAt: lectureType === 'Live' ? scheduledAt : ''
+                    scheduledAt: tempLecture.scheduledAt
                 };
 
-                setModules(modules.map(m =>
-                    m.id === activeModuleId ? { ...m, lectures: [...m.lectures, newLecture] } : m
+                const response = await courseApi.addLecture(lectureData);
+
+                if (response.data.success) {
+                    setModules(prev => prev.map(m =>
+                        m.id === targetModuleId ? {
+                            ...m,
+                            lectures: m.lectures.map(l =>
+                                l.id === tempId ? { ...l, id: response.data.lectureId, url: finalVideoUrl, duration: calculatedDuration, isUploading: false } : l
+                            )
+                        } : m
+                    ));
+                } else {
+                    throw new Error('Failed to save to database');
+                }
+            } catch (err: any) {
+                console.error('Background Upload Failed:', err);
+                // Remove the dummy file on failure
+                setModules(prev => prev.map(m =>
+                    m.id === targetModuleId ? { ...m, lectures: m.lectures.filter(l => l.id !== tempId) } : m
                 ));
+                Alert.alert('Upload Failed', `Could not upload lecture: ${tempLecture.title}`);
             }
-            closeLectureModal();
-        } catch (err) {
-            console.error('Upload/Save error:', err);
-            Alert.alert('Error', 'Failed to upload video or save lecture. Please check connection.');
-        } finally {
-            setIsLoading(false);
-        }
+        };
+
+        backgroundProcess(); // No Await!
+        closeLectureModal(); // Close Immediately
     };
 
     const closeLectureModal = () => {
+        // Since we removed local compression, nothing to cancel here
+        // if (isCompressing && lectureVideo) {
+        //    try { VideoCompressor.cancelCompression(lectureVideo); } catch (e) { }
+        // }
+        if (uploadTaskRef && typeof uploadTaskRef.cancel === 'function') {
+            try { uploadTaskRef.cancel(); } catch (e) { }
+        }
+
         setIsLectureModalVisible(false);
         setActiveModuleId(null);
         setLectureTitle('');
@@ -271,6 +500,14 @@ export default function TeacherCourses() {
         setLectureType('Video');
         setScheduledAt('');
         setIsPreviewFree(false);
+        setIsLiveToggle(false);
+        setUploadProgress(0);
+        setCompressionProgress(0);
+        setIsCompressing(false);
+        setUploadTaskRef(null);
+        setIsLoading(false);
+        setLiveDate('');
+        setLiveTime('');
     };
 
     const hasModules = modules.length > 0;
@@ -333,7 +570,7 @@ export default function TeacherCourses() {
                                 </View>
                                 <View style={styles.moduleActions}>
                                     <TouchableOpacity onPress={() => openEditModule(item)} style={[styles.actionIconBtn, { backgroundColor: colors.surface }]}>
-                                        <Ionicons name="pencil" size={18} color={Colors.secondary} />
+                                        <Ionicons name="create-outline" size={18} color={Colors.primary} />
                                     </TouchableOpacity>
                                     <TouchableOpacity onPress={() => handleDeleteModule(item.id)} style={[styles.actionIconBtn, { backgroundColor: colors.surface }]}>
                                         <Ionicons name="trash" size={18} color="#EB5757" />
@@ -343,25 +580,50 @@ export default function TeacherCourses() {
 
                             <View style={styles.lectureList}>
                                 {item.lectures.map((lec) => (
-                                    <View key={lec.id} style={styles.lectureItem}>
+                                    <TouchableOpacity
+                                        key={lec.id}
+                                        style={styles.lectureItem}
+                                        onPress={() => {
+                                            if (lec.type === 'Video' || lec.url || lec.videoUrl) {
+                                                setSelectedPreviewVideo(lec.url || lec.videoUrl || '');
+                                            } else {
+                                                Alert.alert('Preview Unavailable', 'This lecture is not a recorded video.');
+                                            }
+                                        }}
+                                    >
                                         <View style={[styles.lectureIconBox, { backgroundColor: colors.surface }]}>
-                                            <Ionicons
-                                                name={lec.type === 'Video' ? 'play-circle' : lec.type === 'Live' ? 'videocam' : 'document-text'}
-                                                size={18}
-                                                color={colors.textSecondary}
-                                            />
+                                            {lec.isUploading ? (
+                                                <ActivityIndicator size="small" color={Colors.primary} />
+                                            ) : (
+                                                <Ionicons
+                                                    name={lec.type === 'Video' ? 'play-circle' : lec.type === 'Live' ? 'videocam' : 'document-text'}
+                                                    size={18}
+                                                    color={colors.textSecondary}
+                                                />
+                                            )}
                                         </View>
                                         <View style={{ flex: 1 }}>
                                             <Text style={[styles.lectureName, { color: colors.text }]}>{lec.title}</Text>
-                                            <Text style={[styles.lectureMeta, { color: colors.textSecondary }]}>{lec.duration}</Text>
+                                            {lec.isUploading ? (
+                                                <Text style={[styles.lectureMeta, { color: Colors.primary, fontWeight: 'bold' }]}>Uploading... {lec.uploadProgress || 0}%</Text>
+                                            ) : (
+                                                <Text style={[styles.lectureMeta, { color: colors.textSecondary }]}>{lec.duration || '00:00'}</Text>
+                                            )}
                                         </View>
-                                    </View>
+                                        {lec.type === 'Video' && (
+                                            <Ionicons name="play" size={16} color={Colors.primary} />
+                                        )}
+                                    </TouchableOpacity>
                                 ))}
 
                                 <TouchableOpacity
                                     style={[styles.addLectureBtn, { backgroundColor: isDark ? colors.surface : '#F0F9FF', borderColor: Colors.primary }]}
                                     onPress={() => {
                                         setActiveModuleId(item.id);
+                                        // Pre-select toggle based on courseType
+                                        const isLive = courseInfo?.courseType === 'live';
+                                        setIsLiveToggle(isLive);
+                                        setLectureType(isLive ? 'Live' : 'Video');
                                         setIsLectureModalVisible(true);
                                     }}
                                 >
@@ -441,7 +703,7 @@ export default function TeacherCourses() {
                     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalContainer}>
                         <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                             <View style={styles.modalHeaderInner}>
-                                <Text style={[styles.modalTitle, { color: colors.text }]}>New Video Lecture</Text>
+                                <Text style={[styles.modalTitle, { color: colors.text }]}>{isLiveToggle ? 'Schedule Live Class' : 'New Video Lecture'}</Text>
                                 <TouchableOpacity onPress={closeLectureModal}>
                                     <Ionicons name="close-circle" size={24} color={colors.textSecondary} />
                                 </TouchableOpacity>
@@ -459,39 +721,266 @@ export default function TeacherCourses() {
                                     />
                                 </View>
 
-                                <View style={styles.formItem}>
-                                    <Text style={[styles.label, { color: colors.text }]}>Video File</Text>
-                                    <TouchableOpacity style={[styles.imagePickerCompact, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={pickLectureVideo}>
-                                        {lectureVideo ? (
-                                            <View style={styles.imagePlaceholderCompact}>
-                                                <Ionicons name="film" size={24} color={Colors.primary} />
-                                                <Text style={[styles.imagePlaceholderTextCompact, { color: Colors.primary }]}>Video Selected</Text>
+                                {!isLiveToggle && courseInfo?.courseType !== 'live' && (
+                                    <View style={styles.formItem}>
+                                        <Text style={[styles.label, { color: colors.text }]}>Video File</Text>
+                                        <TouchableOpacity style={[styles.imagePickerCompact, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={pickLectureVideo}>
+                                            {lectureVideo ? (
+                                                <View style={styles.imagePlaceholderCompact}>
+                                                    <Ionicons name="film" size={24} color={Colors.primary} />
+                                                    <Text style={[styles.imagePlaceholderTextCompact, { color: Colors.primary }]}>Video Selected</Text>
+                                                </View>
+                                            ) : (
+                                                <View style={styles.imagePlaceholderCompact}>
+                                                    <Ionicons name="videocam-outline" size={24} color={colors.textSecondary} />
+                                                    <Text style={[styles.imagePlaceholderTextCompact, { color: colors.textSecondary }]}>Select Video from Phone</Text>
+                                                </View>
+                                            )}
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
+
+                                {/* Hide Toggle if courseType is explicitly set */}
+                                {(!courseInfo?.courseType || courseInfo?.courseType === 'general') && (
+                                    <View style={[styles.formItem, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, paddingHorizontal: 5, borderRadius: 12, backgroundColor: isLiveToggle ? '#EF444410' : colors.surface, borderWidth: 1, borderColor: isLiveToggle ? '#EF4444' : colors.border }]}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                            <Ionicons name="videocam" size={20} color={isLiveToggle ? '#EF4444' : colors.textSecondary} />
+                                            <Text style={[styles.label, { color: isLiveToggle ? '#EF4444' : colors.text, marginBottom: 0 }]}>Schedule Live Class</Text>
+                                        </View>
+                                        <Switch
+                                            value={isLiveToggle}
+                                            onValueChange={(val) => {
+                                                setIsLiveToggle(val);
+                                                if (val) setLectureType('Live');
+                                                else setLectureType('Video');
+                                            }}
+                                            trackColor={{ false: '#E2E8F0', true: '#EF4444' }}
+                                            thumbColor={isLiveToggle ? '#FFF' : '#CCC'}
+                                        />
+                                    </View>
+                                )}
+
+                                {isLiveToggle && (
+                                    <View style={{ gap: 12, marginTop: 5 }}>
+                                        <View style={styles.formItem}>
+                                            <Text style={[styles.label, { color: colors.text }]}>Schedule Date & Time</Text>
+                                            <View style={{ flexDirection: 'row', gap: 10 }}>
+                                                <TouchableOpacity
+                                                    style={[styles.input, { flex: 1, backgroundColor: colors.surface, borderColor: colors.border, justifyContent: 'center' }]}
+                                                    onPress={() => setShowCalendarModal(true)}
+                                                >
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                                        <Ionicons name="calendar-outline" size={18} color={Colors.primary} />
+                                                        <Text style={{ color: colors.text }}>{liveDate}</Text>
+                                                    </View>
+                                                </TouchableOpacity>
+
+                                                <TouchableOpacity
+                                                    style={[styles.input, { flex: 1, backgroundColor: colors.surface, borderColor: colors.border, justifyContent: 'center' }]}
+                                                    onPress={() => setShowTimeModal(true)}
+                                                >
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                                        <Ionicons name="time-outline" size={18} color={Colors.primary} />
+                                                        <Text style={{ color: colors.text }}>{liveTime}</Text>
+                                                    </View>
+                                                </TouchableOpacity>
                                             </View>
-                                        ) : (
-                                            <View style={styles.imagePlaceholderCompact}>
-                                                <Ionicons name="videocam-outline" size={24} color={colors.textSecondary} />
-                                                <Text style={[styles.imagePlaceholderTextCompact, { color: colors.textSecondary }]}>Select Video from Phone</Text>
-                                            </View>
-                                        )}
-                                    </TouchableOpacity>
-                                </View>
+                                        </View>
+                                    </View>
+                                )}
+
+                                {/* Unified Progress Bar UI */}
+                                {(isCompressing || (isLoading && uploadProgress > 0)) && (
+                                    <View style={{ marginTop: 15 }}>
+                                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 }}>
+                                            <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: 'bold' }}>
+                                                {isCompressing ? 'Step 1 of 2: Preparing Video...' : 'Step 2 of 2: Saving Video...'}
+                                            </Text>
+                                            <Text style={{ fontSize: 12, color: Colors.primary, fontWeight: 'bold' }}>
+                                                {isCompressing ? Math.round(compressionProgress * 0.5) : Math.round(50 + (uploadProgress * 0.5))}%
+                                            </Text>
+                                        </View>
+                                        <View style={{ height: 6, backgroundColor: colors.border, borderRadius: 3, overflow: 'hidden' }}>
+                                            <View style={{ height: '100%', backgroundColor: Colors.primary, width: `${isCompressing ? (compressionProgress * 0.5) : (50 + (uploadProgress * 0.5))}%` }} />
+                                        </View>
+                                    </View>
+                                )}
 
                                 <TouchableOpacity
-                                    style={[styles.submitBtn, { marginTop: 20 }, isLoading && { opacity: 0.7 }]}
+                                    style={[styles.submitBtn, { marginTop: 20 }, (isLoading || isCompressing) && { opacity: 0.7 }]}
                                     onPress={handleAddLecture}
-                                    disabled={isLoading}
+                                    disabled={isLoading || isCompressing}
                                 >
-                                    {isLoading ? (
-                                        <ActivityIndicator color={Colors.white} />
+                                    {isLoading || isCompressing ? (
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                            <ActivityIndicator color={Colors.white} size="small" />
+                                            {isCompressing && <Text style={{ color: Colors.white, fontWeight: 'bold' }}>Processing...</Text>}
+                                            {!isCompressing && uploadProgress > 0 && <Text style={{ color: Colors.white, fontWeight: 'bold' }}>Saving...</Text>}
+                                        </View>
                                     ) : (
-                                        <Text style={styles.submitBtnText}>Add Lecture</Text>
+                                        <Text style={styles.submitBtnText}>{isLiveToggle ? 'Schedule Live Now' : 'Add Lecture'}</Text>
                                     )}
                                 </TouchableOpacity>
+
+                                {(isLoading || isCompressing) && (
+                                    <TouchableOpacity
+                                        style={{ marginTop: 15, alignSelf: 'center', padding: 8 }}
+                                        onPress={closeLectureModal}
+                                    >
+                                        <Text style={{ color: '#EF4444', fontWeight: 'bold', fontSize: 13 }}>Cancel</Text>
+                                    </TouchableOpacity>
+                                )}
                             </ScrollView>
                         </View>
                     </KeyboardAvoidingView>
                 </View>
             </Modal>
+
+            {/* Custom Horizontal Date Selector Modal */}
+            <Modal visible={showCalendarModal} transparent animationType="fade">
+                <View style={[styles.pickerOverlay, isManualDateMode && { justifyContent: 'center', paddingBottom: 100 }]}>
+                    <KeyboardAvoidingView
+                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                        style={{ width: '100%' }}
+                    >
+                        <View style={[styles.pickerContent, { backgroundColor: colors.card, borderRadius: isManualDateMode ? 30 : 0 }]}>
+                            <View style={styles.pickerHeader}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                    {isManualDateMode && (
+                                        <TouchableOpacity onPress={() => setIsManualDateMode(false)}>
+                                            <Ionicons name="arrow-back" size={24} color={Colors.primary} />
+                                        </TouchableOpacity>
+                                    )}
+                                    <Text style={[styles.pickerTitle, { color: colors.text }]}>{isManualDateMode ? 'Type Custom Date' : 'Select Start Date'}</Text>
+                                </View>
+                                <TouchableOpacity onPress={() => { setShowCalendarModal(false); setIsManualDateMode(false); }}>
+                                    <Ionicons name="close" size={24} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                            </View>
+
+                            {!isManualDateMode && (
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 5, gap: 12, paddingVertical: 20 }}>
+                                    {getNext14Days().map((day) => (
+                                        <TouchableOpacity
+                                            key={day.full}
+                                            style={[
+                                                styles.dateBox,
+                                                { backgroundColor: liveDate === day.full ? Colors.primary : colors.surface, borderColor: liveDate === day.full ? Colors.primary : colors.border }
+                                            ]}
+                                            onPress={() => { setLiveDate(day.full); setShowCalendarModal(false); }}
+                                        >
+                                            <Text style={[styles.dateMonth, { color: liveDate === day.full ? '#FFF' : colors.textSecondary }]}>{day.month}</Text>
+                                            <Text style={[styles.dateNum, { color: liveDate === day.full ? '#FFF' : colors.text }]}>{day.dayNum}</Text>
+                                            <Text style={[styles.dateDay, { color: liveDate === day.full ? '#FFF' : colors.textSecondary }]}>{day.dayName}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                            )}
+
+                            <TextInput
+                                style={[styles.input, { marginTop: isManualDateMode ? 0 : 10, marginHorizontal: 20, textAlign: 'center', backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                                placeholder="Or type: 2026-04-25"
+                                placeholderTextColor={colors.textSecondary}
+                                autoFocus={isManualDateMode}
+                                value={liveDate}
+                                onChangeText={setLiveDate}
+                                onFocus={() => setIsManualDateMode(true)}
+                            />
+                            {isManualDateMode && (
+                                <Text style={{ fontSize: 11, color: colors.textSecondary, textAlign: 'center', marginTop: 10 }}>Format: YYYY-MM-DD • Press back arrow for quick dates</Text>
+                            )}
+
+                            <View style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border, alignItems: 'center', marginTop: 10 }}>
+                                <Text style={{ color: colors.textSecondary, fontSize: 13 }}>Scheduled for: <Text style={{ fontWeight: 'bold', color: Colors.primary }}>{liveDate}</Text></Text>
+                            </View>
+                        </View>
+                    </KeyboardAvoidingView>
+                </View>
+            </Modal>
+
+            {/* Custom Time Modal */}
+            <Modal visible={showTimeModal} transparent animationType="slide">
+                <View style={[styles.pickerOverlay, isManualTimeMode && { justifyContent: 'center', paddingBottom: 100 }]}>
+                    <KeyboardAvoidingView
+                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                        style={{ width: '100%' }}
+                    >
+                        <View style={[styles.pickerContent, { backgroundColor: colors.card, paddingBottom: 40, borderTopLeftRadius: isManualTimeMode ? 30 : 30, borderTopRightRadius: isManualTimeMode ? 30 : 30, borderRadius: isManualTimeMode ? 30 : 0 }]}>
+                            <View style={styles.pickerHeader}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                    {isManualTimeMode && (
+                                        <TouchableOpacity onPress={() => setIsManualTimeMode(false)}>
+                                            <Ionicons name="arrow-back" size={24} color={Colors.primary} />
+                                        </TouchableOpacity>
+                                    )}
+                                    <Text style={[styles.pickerTitle, { color: colors.text }]}>{isManualTimeMode ? 'Type Custom Time' : 'Select Time'}</Text>
+                                </View>
+                                <TouchableOpacity onPress={() => { setShowTimeModal(false); setIsManualTimeMode(false); }}>
+                                    <Ionicons name="close" size={24} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                            </View>
+
+                            {!isManualTimeMode && (
+                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center', marginTop: 10 }}>
+                                    {['09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM', '08:00 PM'].map(t => (
+                                        <TouchableOpacity
+                                            key={t}
+                                            style={[styles.timeSlot, { borderColor: liveTime === t ? Colors.primary : colors.border, backgroundColor: liveTime === t ? Colors.primary + '10' : 'transparent' }]}
+                                            onPress={() => { setLiveTime(t); setShowTimeModal(false); }}
+                                        >
+                                            <Text style={{ color: liveTime === t ? Colors.primary : colors.text, fontWeight: liveTime === t ? 'bold' : 'normal' }}>{t}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            )}
+
+                            <TextInput
+                                style={[styles.input, { marginTop: isManualTimeMode ? 0 : 20, marginHorizontal: 20, textAlign: 'center', backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                                placeholder="Or type: 05:30 PM"
+                                placeholderTextColor={colors.textSecondary}
+                                autoFocus={isManualTimeMode}
+                                value={liveTime}
+                                onChangeText={setLiveTime}
+                                onFocus={() => setIsManualTimeMode(true)}
+                            />
+                            {isManualTimeMode && (
+                                <Text style={{ fontSize: 11, color: colors.textSecondary, textAlign: 'center', marginTop: 10 }}>Press back arrow to see quick slots</Text>
+                            )}
+                        </View>
+                    </KeyboardAvoidingView>
+                </View>
+            </Modal>
+
+            {/* --- Video Preview Modal --- */}
+            {selectedPreviewVideo && (
+                <Modal visible={true} transparent animationType="fade" onRequestClose={() => setSelectedPreviewVideo(null)}>
+                    <View style={styles.videoModalOverlay}>
+                        <View style={styles.videoModalHeader}>
+                            <TouchableOpacity style={styles.videoCloseBtn} onPress={() => {
+                                setSelectedPreviewVideo(null);
+                                previewPlayer.pause();
+                            }}>
+                                <Ionicons name="close" size={24} color="#FFF" />
+                            </TouchableOpacity>
+                        </View>
+                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                            {isPreviewLoading && (
+                                <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', zIndex: 1, backgroundColor: 'rgba(0,0,0,0.8)' }]}>
+                                    <ActivityIndicator size="large" color={Colors.primary} />
+                                    <Text style={{ color: '#FFF', marginTop: 10, fontSize: 12 }}>LOADING PREVIEW...</Text>
+                                </View>
+                            )}
+                            <VideoView
+                                player={previewPlayer}
+                                style={styles.fullscreenVideo}
+                                allowsFullscreen
+                                allowsPictureInPicture
+                            />
+                        </View>
+                    </View>
+                </Modal>
+            )}
+
         </SafeAreaView>
     );
 }
@@ -500,6 +989,27 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#F9FAFB',
+    },
+    videoModalOverlay: {
+        flex: 1,
+        backgroundColor: '#000',
+        justifyContent: 'center',
+    },
+    videoModalHeader: {
+        position: 'absolute',
+        top: 40,
+        right: 20,
+        zIndex: 100,
+    },
+    videoCloseBtn: {
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        padding: 8,
+        borderRadius: 20,
+    },
+    fullscreenVideo: {
+        width: Dimensions.get('window').width,
+        height: Dimensions.get('window').width * (9 / 16),
+        alignSelf: 'center',
     },
     screenContainer: {
         flex: 1,
@@ -745,4 +1255,13 @@ const styles = StyleSheet.create({
     previewImage: { width: '100%', height: '100%' },
     moduleThumbBoxList: { width: 44, height: 44, borderRadius: 10, marginRight: 12, overflow: 'hidden', backgroundColor: '#F5F5F5' },
     moduleThumbImg: { width: '100%', height: '100%' },
+    pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+    pickerContent: { borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20 },
+    pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    pickerTitle: { fontSize: 18, fontWeight: 'bold' },
+    timeSlot: { paddingHorizontal: 15, paddingVertical: 10, borderRadius: 12, borderWidth: 1, minWidth: '30%', alignItems: 'center' },
+    dateBox: { width: 70, height: 100, borderRadius: 15, borderWidth: 1, justifyContent: 'center', alignItems: 'center', gap: 2 },
+    dateMonth: { fontSize: 10, textTransform: 'uppercase', fontWeight: 'bold' },
+    dateNum: { fontSize: 22, fontWeight: 'bold' },
+    dateDay: { fontSize: 11 },
 });

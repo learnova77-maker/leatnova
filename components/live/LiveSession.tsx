@@ -40,6 +40,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ appId, channelName, token, ui
     const [viewerCount, setViewerCount] = useState(0);
     const [showControls, setShowControls] = useState(true);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [isScreenSharing, setIsScreenSharing] = useState(false);
     const scrollViewRef = useRef<FlatList>(null);
 
     // Request permissions on Android
@@ -244,6 +245,37 @@ const LiveSession: React.FC<LiveSessionProps> = ({ appId, channelName, token, ui
             engine.enableLocalVideo(isCameraOff); // Turns hardware on if currently off, and vice versa
             engine.muteLocalVideoStream(!isCameraOff);
             setIsCameraOff(!isCameraOff);
+
+            // If screen sharing was active, we don't want to publish camera yet
+            if (!isScreenSharing) {
+                engine.updateChannelMediaOptions({
+                    publishCameraTrack: isCameraOff,
+                });
+            }
+        }
+    };
+
+    const handleToggleScreenShare = () => {
+        const engine = engineRef.current;
+        if (!engine) return;
+
+        if (isScreenSharing) {
+            engine.stopScreenCapture();
+            engine.updateChannelMediaOptions({
+                publishCameraTrack: !isCameraOff,
+                publishScreenTrack: false,
+            });
+            setIsScreenSharing(false);
+        } else {
+            engine.startScreenCapture({
+                captureVideo: true,
+                captureAudio: false,
+            });
+            engine.updateChannelMediaOptions({
+                publishCameraTrack: false,
+                publishScreenTrack: true,
+            });
+            setIsScreenSharing(true);
         }
     };
 
@@ -254,12 +286,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ appId, channelName, token, ui
             engine.release();
             engineRef.current = null;
         }
-
-        Alert.alert(
-            "Session Ended",
-            `Live Duration: ${formatTime(elapsedSeconds)}`,
-            [{ text: "OK", onPress: () => onEnd() }]
-        );
+        onEnd();
     };
 
     const sendMessage = () => {
@@ -334,7 +361,12 @@ const LiveSession: React.FC<LiveSessionProps> = ({ appId, channelName, token, ui
             {/* Background Video Layer (Completely Static) */}
             <Pressable style={StyleSheet.absoluteFill} onPress={toggleUI}>
                 {role === 'publisher' ? (
-                    isCameraOff ? (
+                    isScreenSharing ? (
+                        <RtcSurfaceView
+                            style={styles.fullVideo}
+                            canvas={{ uid: 0, sourceType: VideoSourceType.VideoSourceScreen }}
+                        />
+                    ) : isCameraOff ? (
                         <View style={[styles.fullVideo, styles.centerContent, { backgroundColor: '#111' }]}>
                             <Ionicons name="videocam-off" size={60} color="#555" />
                             <Text style={styles.waitingText}>Camera is turned off</Text>
@@ -395,7 +427,7 @@ const LiveSession: React.FC<LiveSessionProps> = ({ appId, channelName, token, ui
                         <View style={{ flex: 1 }} pointerEvents="none" />
 
                         {/* Bottom Controls */}
-                        <View style={styles.bottomSection} pointerEvents="box-none">
+                        <View style={styles.bottomSection} pointerEvents="auto">
                             {/* Chat Display */}
                             <View style={styles.chatArea}>
                                 <FlatList
@@ -470,11 +502,27 @@ const LiveSession: React.FC<LiveSessionProps> = ({ appId, channelName, token, ui
                                                 />
                                                 <Text style={styles.controlLabel}>{isCameraOff ? 'Camera On' : 'Camera Off'}</Text>
                                             </TouchableOpacity>
+
+                                            <TouchableOpacity
+                                                style={[styles.controlBtn, isScreenSharing && styles.controlBtnActive]}
+                                                onPress={handleToggleScreenShare}
+                                            >
+                                                <Ionicons
+                                                    name={isScreenSharing ? 'stop-circle-outline' : 'tv-outline'}
+                                                    size={22}
+                                                    color="#FFF"
+                                                />
+                                                <Text style={styles.controlLabel}>{isScreenSharing ? 'Stop Share' : 'Share Screen'}</Text>
+                                            </TouchableOpacity>
                                         </>
                                     )}
 
-                                    <TouchableOpacity style={styles.endBtn} onPress={handleEndCall}>
-                                        <Ionicons name="call" size={24} color="#FFF" />
+                                    <TouchableOpacity
+                                        style={styles.endBtn}
+                                        onPress={handleEndCall}
+                                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                                    >
+                                        <Ionicons name="call" size={28} color="#FFF" />
                                     </TouchableOpacity>
                                 </View>
                             </View>
@@ -575,7 +623,8 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.1)',
     },
     controlBtnActive: {
-        backgroundColor: 'rgba(255,68,68,0.7)',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        borderColor: '#FF4444',
     },
     controlLabel: {
         color: '#FFF',

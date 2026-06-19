@@ -1,32 +1,36 @@
 {
   "expo": {
-    "name": "Learnova",
+    "name": "MatloVerse",
     "slug": "Learnova",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/app_icon.png",
+    "icon": "./assets/images/icon.png",
     "scheme": "learnova",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#FFCE1A",
-        "foregroundImage": "./assets/images/app_icon.png",
+        "foregroundImage": "./assets/images/icon.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "versionCode": 7,
       "package": "com.cozycave.Learnova",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
         "MODIFY_AUDIO_SETTINGS",
         "ACCESS_NETWORK_STATE",
-        "INTERNET"
+        "INTERNET",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MEDIA_PROJECTION",
+        "WAKE_LOCK"
       ]
     },
     "web": {
@@ -38,7 +42,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/app_icon.png",
+          "image": "./assets/images/icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
@@ -47,7 +51,16 @@
           }
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "androidClientId": "239945810669-2j1k0oondn6s99kqfe6pvvo23v09eg8e.apps.googleusercontent.com",
+          "iosUrlScheme": "com.googleusercontent.apps.239945810669-dummy"
+        }
+      ],
+      "react-native-compressor",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

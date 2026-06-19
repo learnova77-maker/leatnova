@@ -1,76 +1,65 @@
-import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import {
+    Dimensions,
+    Platform,
     SafeAreaView,
     StatusBar,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View
+    View,
 } from 'react-native';
 
-export default function PaymentSuccess() {
+const { width } = Dimensions.get('window');
+
+export default function EnrollmentSuccess() {
     const router = useRouter();
+    const { id, courseId, courseTitle } = useLocalSearchParams();
     const { colors, isDark } = useTheme();
-    const { courseId, courseTitle } = useLocalSearchParams();
 
-    // Cleanup on unmount
-    React.useEffect(() => {
-        return () => {
-            // Force clear any specific success state if needed
-        };
-    }, []);
-
-    const handleNavigation = (path: string) => {
-        // Use replace to prevent going back to success page
-        router.replace(path as any);
-    };
+    const targetId = id || courseId;
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+            <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
             <View style={styles.content}>
-                <View style={[styles.iconContainer, { backgroundColor: isDark ? '#1E293B' : '#F0FDF4' }]}>
-                    <Ionicons name="checkmark-circle" size={100} color="#16A34A" />
+                <View style={styles.iconWrapper}>
+                    <View style={[styles.iconContainer, { backgroundColor: isDark ? 'rgba(0, 174, 239, 0.1)' : 'rgba(0, 174, 239, 0.05)', borderColor: isDark ? 'rgba(0, 174, 239, 0.3)' : 'rgba(0, 174, 239, 0.2)' }]}>
+                        <Ionicons name="shield-checkmark" size={60} color="#00AEEF" />
+                    </View>
+                    <View style={[styles.glowRing, { backgroundColor: isDark ? 'rgba(0, 174, 239, 0.05)' : 'rgba(0, 174, 239, 0.03)' }]} />
                 </View>
 
-                <Text style={[styles.title, { color: colors.text }]}>Payment Successful! 🎉</Text>
+                <Text style={[styles.title, { color: colors.text }]}>SUCCESSFULLY <Text style={{ color: '#00AEEF' }}>ENROLLED</Text></Text>
 
                 <Text style={[styles.subTitle, { color: colors.textSecondary }]}>
-                    Congratulations! You are now officially enrolled in:
+                    YOU HAVE SUCCESSFULLY ENROLLED IN:
                 </Text>
 
                 <View style={[styles.courseChip, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Ionicons name="book-outline" size={20} color={Colors.primary} />
-                    <Text style={[styles.courseName, { color: colors.text }]}>
-                        {courseTitle || 'Your Course'}
-                    </Text>
-                </View>
-
-                <View style={styles.messageBox}>
-                    <Text style={[styles.message, { color: colors.textSecondary }]}>
-                        You can now access all modules, download resources, and start your learning journey.
+                    <Text style={styles.courseName}>
+                        {String(courseTitle || 'YOUR COURSE').toUpperCase()}
                     </Text>
                 </View>
 
                 <View style={styles.footer}>
                     <TouchableOpacity
-                        style={[styles.primaryBtn, { backgroundColor: Colors.primary }]}
-                        onPress={() => router.replace(`/student/courses/${courseId}`)}
+                        style={styles.primaryBtn}
+                        onPress={() => router.replace(`/student/courses/${targetId}`)}
                     >
-                        <Text style={styles.primaryBtnText}>Start Learning Now</Text>
-                        <Ionicons name="arrow-forward" size={18} color="#FFF" />
+                        <Text style={styles.primaryBtnText}>START LEARNING NOW</Text>
+                        <Ionicons name="chevron-forward" size={16} color="#000" />
                     </TouchableOpacity>
 
                     <TouchableOpacity
                         style={[styles.secondaryBtn, { borderColor: colors.border }]}
                         onPress={() => router.replace('/student')}
                     >
-                        <Text style={[styles.secondaryBtnText, { color: colors.text }]}>Go to Dashboard</Text>
+                        <Text style={[styles.secondaryBtnText, { color: colors.textSecondary }]}>GO TO DASHBOARD</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -86,84 +75,91 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        padding: 30,
+        paddingHorizontal: 40,
     },
-    iconContainer: {
-        width: 160,
-        height: 160,
-        borderRadius: 80,
+    iconWrapper: {
+        width: 140,
+        height: 140,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 30,
-        shadowColor: '#16A34A',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.1,
-        shadowRadius: 20,
-        elevation: 5,
+        marginBottom: 50,
+    },
+    iconContainer: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 2,
+        borderWidth: 1,
+    },
+    glowRing: {
+        position: 'absolute',
+        width: 140,
+        height: 140,
+        borderRadius: 70,
+        zIndex: 1,
     },
     title: {
-        fontSize: 28,
+        fontSize: 24,
         fontWeight: '900',
         textAlign: 'center',
-        marginBottom: 12,
+        marginBottom: 15,
+        letterSpacing: 2,
+        fontFamily: Platform.OS === 'ios' ? 'Space Grotesk' : 'SpaceGrotesk-Bold',
     },
     subTitle: {
-        fontSize: 16,
+        fontSize: 10,
         textAlign: 'center',
-        marginBottom: 20,
-        lineHeight: 24,
+        marginBottom: 30,
+        fontWeight: '700',
+        letterSpacing: 1,
+        lineHeight: 18,
     },
     courseChip: {
-        flexDirection: 'row',
-        alignItems: 'center',
         paddingHorizontal: 20,
         paddingVertical: 12,
-        borderRadius: 50,
+        borderRadius: 8,
         borderWidth: 1,
-        marginBottom: 30,
-        gap: 10,
+        marginBottom: 50,
     },
     courseName: {
-        fontSize: 16,
-        fontWeight: '700',
-    },
-    messageBox: {
-        marginBottom: 40,
-        paddingHorizontal: 20,
-    },
-    message: {
-        fontSize: 14,
-        textAlign: 'center',
-        lineHeight: 22,
+        fontSize: 12,
+        fontWeight: '900',
+        color: '#00AEEF',
+        letterSpacing: 0.5,
     },
     footer: {
         width: '100%',
-        gap: 15,
+        gap: 20,
     },
     primaryBtn: {
         flexDirection: 'row',
         height: 60,
-        borderRadius: 18,
+        borderRadius: 12,
+        backgroundColor: '#00AEEF',
         justifyContent: 'center',
         alignItems: 'center',
-        gap: 10,
+        gap: 12,
         width: '100%',
     },
     primaryBtnText: {
-        color: '#FFF',
-        fontSize: 18,
-        fontWeight: 'bold',
+        color: '#000',
+        fontSize: 11,
+        fontWeight: '900',
+        letterSpacing: 1,
     },
     secondaryBtn: {
         height: 60,
-        borderRadius: 18,
+        borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
         width: '100%',
     },
     secondaryBtnText: {
-        fontSize: 16,
-        fontWeight: '600',
+        fontSize: 10,
+        fontWeight: '900',
+        letterSpacing: 1,
     },
 });

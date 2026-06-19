@@ -169,6 +169,13 @@ router.post('/create-checkout', async (req, res) => {
                 });
             }
 
+            // 4. Index for fast notification lookups
+            await set(ref(rtdb, `course_enrollments/${courseId}/${studentId}`), {
+                studentId,
+                studentName: studentName || '',
+                enrolledAt: Date.now()
+            });
+
             return res.json({ success: true, free: true, message: 'Enrolled in free course!' });
         } catch (err) {
             return res.status(500).json({ success: false, message: err.message });
@@ -326,6 +333,13 @@ router.post('/confirm-payment', async (req, res) => {
                 });
             }
 
+            // 5. Index for fast notification lookups
+            await set(ref(rtdb, `course_enrollments/${courseId}/${studentId}`), {
+                studentId,
+                studentName: studentName || '',
+                enrolledAt: Date.now()
+            });
+
             return res.json({ success: true, message: 'Enrolled successfully!' });
         } else {
             return res.json({ success: false, message: 'Payment not succeeded' });
@@ -405,6 +419,13 @@ router.post('/verify-payment', async (req, res) => {
                     paidAt: null
                 });
             }
+
+            // Index for fast notification lookups
+            await set(ref(rtdb, `course_enrollments/${courseId}/${studentId}`), {
+                studentId,
+                studentName: studentName || '',
+                enrolledAt: Date.now()
+            });
 
             res.json({
                 success: true,
@@ -668,6 +689,123 @@ router.get('/success-redirect', (req, res) => {
         res.redirect(`${clientUrl}/payment-cancel`);
     } else {
         res.redirect(`${clientUrl}/payment-success?session_id=${sessionId}`);
+    }
+});
+
+// ============================================
+// 7. COINS WALLET
+// ============================================
+router.post('/buy-coins', async (req, res) => {
+    const { studentId, coins, transactionId } = req.body;
+
+    if (!studentId || !coins) {
+        return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    try {
+        const userRef = ref(rtdb, `users/${studentId}`);
+        const userSnap = await get(userRef);
+
+        let currentBalance = 0;
+        if (userSnap.exists() && userSnap.val().coins) {
+            currentBalance = parseInt(userSnap.val().coins) || 0;
+        }
+
+        const newBalance = currentBalance + parseInt(coins);
+
+        // Update user's coin balance
+        await update(userRef, { coins: newBalance });
+
+        // Log transaction for history
+        const txRef = ref(rtdb, `coin_transactions/${studentId}`);
+        await push(txRef, {
+            type: 'credit',
+            amount: parseInt(coins),
+            newBalance: newBalance,
+            timestamp: Date.now(),
+            platform: 'google_play',
+            transactionId: transactionId || 'native_iap'
+        });
+
+        res.json({ success: true, newBalance, message: 'Coins added successfully!' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+router.post('/buy-with-coins', async (req, res) => {
+    const { studentId, courseId, courseTitle, price, teacherId, studentName } = req.body;
+
+    if (!studentId || !courseId || !price) {
+        return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    try {
+        const userRef = ref(rtdb, `users/${studentId}`);
+        const userSnap = await get(userRef);
+
+        if (!userSnap.exists()) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        const currentCoins = parseInt(userSnap.val().coins) || 0;
+        const cost = parseInt(price);
+
+        if (currentCoins < cost) {
+            return res.status(400).json({ success: false, message: 'Insufficient coins balance' });
+        }
+
+        const newBalance = currentCoins - cost;
+
+        // 1. Deduct coins from user
+        await update(userRef, { coins: newBalance });
+
+        // 2. Log transaction
+        const txRef = ref(rtdb, `coin_transactions/${studentId}`);
+        await push(txRef, {
+            type: 'debit',
+            amount: cost,
+            newBalance: newBalance,
+            timestamp: Date.now(),
+            reason: `Purchased course: ${courseTitle}`,
+            courseId: courseId
+        });
+
+        // 3. Save enrollment (similar to free enrollment logic)
+        await set(ref(rtdb, `enrollments/${studentId}/${courseId}`), {
+            enrolledAt: Date.now(),
+            paymentStatus: 'coins',
+            price: cost,
+            courseTitle: courseTitle || ''
+        });
+
+        await set(ref(rtdb, `studentCourses/${studentId}/${courseId}`), {
+            courseId,
+            courseTitle: courseTitle || '',
+            teacherId: teacherId || '',
+            enrolledAt: Date.now(),
+        });
+
+        if (teacherId) {
+            await set(ref(rtdb, `teacherStudents/${teacherId}/${studentId}`), {
+                studentId,
+                studentName: studentName || '',
+                courseId,
+                courseTitle: courseTitle || '',
+                enrolledAt: Date.now(),
+            });
+        }
+
+        await set(ref(rtdb, `course_enrollments/${courseId}/${studentId}`), {
+            studentId,
+            studentName: studentName || '',
+            enrolledAt: Date.now()
+        });
+
+        res.json({ success: true, newBalance, message: 'Course unlocked successfully!' });
+
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 

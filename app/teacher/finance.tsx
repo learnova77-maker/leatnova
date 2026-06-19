@@ -1,22 +1,22 @@
+import NoInternet from '@/components/NoInternet';
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { paymentApi } from '@/constants/api';
-import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
-    Linking,
     SafeAreaView,
     ScrollView,
     StatusBar,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 
 interface Payout {
@@ -37,6 +37,7 @@ export default function TeacherFinance() {
     const [isLoading, setIsLoading] = useState(true);
     const [isConnecting, setIsConnecting] = useState(false);
     const [user, setUser] = useState<any>(null);
+    const [isOffline, setIsOffline] = useState(false);
 
     const [onboardStatus, setOnboardStatus] = useState({
         onboarded: false,
@@ -51,7 +52,13 @@ export default function TeacherFinance() {
         payouts: [] as Payout[],
     });
 
-    useEffect(() => { loadData(); }, []);
+    useEffect(() => {
+        const unsubscribe = NetInfo.addEventListener(state => {
+            setIsOffline(!state.isConnected);
+        });
+        loadData();
+        return () => unsubscribe();
+    }, []);
 
     const loadData = async () => {
         try {
@@ -79,52 +86,23 @@ export default function TeacherFinance() {
         }
     };
 
-    const handleConnectBank = async () => {
-        if (!user) return;
-        setIsConnecting(true);
-        try {
-            const res = await paymentApi.onboardTeacher({
-                teacherId: user.uid,
-                email: user.email,
-                teacherName: user.fullName,
-            });
-            if (res.data.success && res.data.url) {
-                // Open Stripe onboarding in browser
-                await Linking.openURL(res.data.url);
-            } else {
-                Alert.alert('Error', 'Could not generate onboarding link.');
-            }
-        } catch (e: any) {
-            Alert.alert('Error', e.message || 'Failed to connect bank account.');
-        } finally {
-            setIsConnecting(false);
-        }
-    };
-
     const formatDate = (timestamp: number) => {
         if (!timestamp) return '--';
         const d = new Date(timestamp);
         return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     };
 
-    const daysUntilPayout = (scheduledDate: number) => {
-        const diff = scheduledDate - Date.now();
-        if (diff <= 0) return 'Processing...';
-        const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-        return `${days} day${days > 1 ? 's' : ''} left`;
-    };
-
     const getStatusColor = (status: string) => {
-        if (status === 'paid') return '#27AE60';
+        if (status === 'paid') return '#10B981';
         if (status === 'failed') return '#EB5757';
-        if (status === 'available') return Colors.primary;
-        return '#F2994A'; // processing
+        if (status === 'available') return '#00AEEF';
+        return '#F59E0B'; // processing
     };
 
     if (isLoading) {
         return (
             <SafeAreaView style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
-                <ActivityIndicator size="large" color={Colors.primary} />
+                <ActivityIndicator size="large" color="#00AEEF" />
             </SafeAreaView>
         );
     }
@@ -135,152 +113,142 @@ export default function TeacherFinance() {
             <AppSidebar role="teacher" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader title="Learnova" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} role="teacher" />
 
-            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-                <Text style={[styles.pageTitle, { color: colors.text }]}>Finance & Earnings</Text>
-                <Text style={[styles.pageSubtitle, { color: colors.textSecondary }]}>Track your revenue and payouts</Text>
+            {isOffline ? (
+                <NoInternet />
+            ) : (
+                <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+                    <Text style={[styles.pageTitle, { color: colors.text }]}>Finance & <Text style={{ color: '#00AEEF' }}>Earnings</Text></Text>
+                    <Text style={[styles.pageSubtitle, { color: colors.textSecondary }]}>Track your revenue and payouts</Text>
 
-                {/* Wallet Balance Card */}
-                <View style={[styles.bankCard, { backgroundColor: isDark ? '#1F2937' : '#F0F9FF', borderColor: Colors.primary }]}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                        <View style={[styles.bankIconBg, { backgroundColor: Colors.primary }]}>
-                            <Ionicons name="wallet-outline" size={24} color="#FFF" />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Text style={[styles.bankTitle, { color: colors.text }]}>Learnova Wallet</Text>
-                            <Text style={[styles.bankDesc, { color: colors.textSecondary }]}>
-                                Your share (55%) is automatically added here after each sale.
-                            </Text>
-                        </View>
-                    </View>
-
-                    <TouchableOpacity
-                        style={[styles.connectBtn, { backgroundColor: Colors.primary, marginTop: 15 }]}
-                        onPress={() => {
-                            Alert.alert(
-                                "Request Payout",
-                                `You have $${earnings.pendingAmount.toFixed(2)} available. Send request to Admin?`,
-                                [
-                                    { text: "Cancel" },
-                                    { text: "Send Request", onPress: () => Alert.alert("Success", "Payout request sent to Admin! They will contact you for bank/Payoneer details.") }
-                                ]
-                            );
-                        }}
-                        disabled={earnings.pendingAmount <= 0}
-                    >
-                        <Text style={styles.connectBtnText}>Request Payout</Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* Earnings Overview */}
-                <View style={styles.earningsRow}>
-                    <View style={[styles.earningCard, { backgroundColor: isDark ? '#0D2847' : '#EBF4FF', borderColor: Colors.primary + '30' }]}>
-                        <Ionicons name="wallet-outline" size={28} color={Colors.primary} />
-                        <Text style={[styles.earningAmount, { color: Colors.primary }]}>${earnings.totalEarned.toFixed(2)}</Text>
-                        <Text style={[styles.earningLabel, { color: colors.textSecondary }]}>Total Earned</Text>
-                    </View>
-                    <View style={[styles.earningCard, { backgroundColor: isDark ? '#1A2E1A' : '#ECFDF5', borderColor: '#27AE6030' }]}>
-                        <Ionicons name="checkmark-done-outline" size={28} color="#27AE60" />
-                        <Text style={[styles.earningAmount, { color: '#27AE60' }]}>${earnings.paidAmount.toFixed(2)}</Text>
-                        <Text style={[styles.earningLabel, { color: colors.textSecondary }]}>Paid Out</Text>
-                    </View>
-                    <View style={[styles.earningCard, { backgroundColor: isDark ? '#2E2A1A' : '#FFFBEB', borderColor: '#F2994A30' }]}>
-                        <Ionicons name="time-outline" size={28} color="#F2994A" />
-                        <Text style={[styles.earningAmount, { color: '#F2994A' }]}>${earnings.pendingAmount.toFixed(2)}</Text>
-                        <Text style={[styles.earningLabel, { color: colors.textSecondary }]}>Pending</Text>
-                    </View>
-                </View>
-
-                {/* Payout History */}
-                <View style={styles.sectionHeader}>
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Payout History</Text>
-                    <Text style={[styles.sectionCount, { color: colors.textSecondary }]}>{earnings.payouts.length} transactions</Text>
-                </View>
-
-                {earnings.payouts.length > 0 ? earnings.payouts.map((payout) => (
-                    <View key={payout.id} style={[styles.payoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    {/* Wallet Balance Card */}
+                    <View style={[styles.bankCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                            <View style={[styles.payoutIcon, { backgroundColor: getStatusColor(payout.status) + '20' }]}>
-                                <Ionicons
-                                    name={payout.status === 'paid' ? "checkmark-circle" : payout.status === 'failed' ? "close-circle" : "time"}
-                                    size={22}
-                                    color={getStatusColor(payout.status)}
-                                />
+                            <View style={[styles.bankIconBg, { backgroundColor: 'rgba(0, 174, 239, 0.1)' }]}>
+                                <Ionicons name="wallet-outline" size={24} color="#00AEEF" />
                             </View>
                             <View style={{ flex: 1 }}>
-                                <Text style={[styles.payoutCourse, { color: colors.text }]} numberOfLines={1}>{payout.courseTitle}</Text>
-                                <Text style={[styles.payoutStudent, { color: colors.textSecondary }]}>by {payout.studentName || 'Student'}</Text>
-                            </View>
-                            <View style={{ alignItems: 'flex-end' }}>
-                                <Text style={[styles.payoutAmount, { color: getStatusColor(payout.status) }]}>+${payout.teacherAmount.toFixed(2)}</Text>
-                                <Text style={[styles.payoutDate, { color: colors.textSecondary }]}>
-                                    {formatDate(payout.paidAt || payout.createdAt)}
+                                <Text style={[styles.bankTitle, { color: colors.text }]}>LEARNOVA WALLET</Text>
+                                <Text style={[styles.bankDesc, { color: colors.textSecondary }]}>
+                                    Your share (55%) is automatically added here after each sale.
                                 </Text>
                             </View>
                         </View>
-                        <View style={[styles.payoutStatusBadge, { backgroundColor: getStatusColor(payout.status) + '15' }]}>
-                            <Text style={[styles.payoutStatusText, { color: getStatusColor(payout.status) }]}>
-                                {payout.status === 'available' ? 'In Wallet (Ready)' : payout.status.charAt(0).toUpperCase() + payout.status.slice(1)}
-                            </Text>
+
+                        <TouchableOpacity
+                            style={[styles.connectBtn, { backgroundColor: '#00AEEF', marginTop: 15 }]}
+                            onPress={() => {
+                                Alert.alert(
+                                    "Request Payout",
+                                    `You have $${earnings.pendingAmount.toFixed(2)} available. Send request to Admin?`,
+                                    [
+                                        { text: "Cancel" },
+                                        { text: "Send Request", onPress: () => Alert.alert("Success", "Payout request sent to Admin! They will contact you for details.") }
+                                    ]
+                                );
+                            }}
+                            disabled={earnings.pendingAmount <= 0}
+                        >
+                            <Text style={styles.connectBtnText}>REQUEST PAYOUT</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Earnings Overview */}
+                    <View style={styles.earningsRow}>
+                        <View style={[styles.earningCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="wallet-outline" size={24} color="#00AEEF" />
+                            <Text style={[styles.earningAmount, { color: colors.text }]}>${earnings.totalEarned.toFixed(2)}</Text>
+                            <Text style={[styles.earningLabel, { color: colors.textSecondary }]}>TOTAL EARNED</Text>
+                        </View>
+                        <View style={[styles.earningCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="checkmark-done-outline" size={24} color="#10B981" />
+                            <Text style={[styles.earningAmount, { color: colors.text }]}>${earnings.paidAmount.toFixed(2)}</Text>
+                            <Text style={[styles.earningLabel, { color: colors.textSecondary }]}>PAID OUT</Text>
+                        </View>
+                        <View style={[styles.earningCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="time-outline" size={24} color="#F59E0B" />
+                            <Text style={[styles.earningAmount, { color: colors.text }]}>${earnings.pendingAmount.toFixed(2)}</Text>
+                            <Text style={[styles.earningLabel, { color: colors.textSecondary }]}>PENDING</Text>
                         </View>
                     </View>
-                )) : (
-                    <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Ionicons name="receipt-outline" size={60} color={colors.border} />
-                        <Text style={[styles.emptyTitle, { color: colors.text }]}>No Transactions Yet</Text>
-                        <Text style={[styles.emptyDesc, { color: colors.textSecondary }]}>
-                            When students purchase your courses, earnings will appear here.
-                        </Text>
+
+                    {/* Payout History */}
+                    <View style={styles.sectionHeader}>
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>PAYOUT <Text style={{ color: '#00AEEF' }}>HISTORY</Text></Text>
                     </View>
-                )}
-            </ScrollView>
+
+                    {earnings.payouts.length > 0 ? (
+                        earnings.payouts.map((payout) => (
+                            <View key={payout.id} style={[styles.payoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                    <View style={[styles.payoutIcon, { backgroundColor: 'rgba(0, 174, 239, 0.05)' }]}>
+                                        <Ionicons
+                                            name={payout.status === 'paid' ? "checkmark-circle" : "time"}
+                                            size={20}
+                                            color="#00AEEF"
+                                        />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.payoutCourse, { color: colors.text }]} numberOfLines={1}>{payout.courseTitle.toUpperCase()}</Text>
+                                        <Text style={[styles.payoutStudent, { color: colors.textSecondary }]}>BY {payout.studentName ? payout.studentName.toUpperCase() : 'STUDENT'}</Text>
+                                    </View>
+                                    <View style={{ alignItems: 'flex-end' }}>
+                                        <Text style={[styles.payoutAmount, { color: '#00AEEF' }]}>+${payout.teacherAmount.toFixed(2)}</Text>
+                                        <Text style={[styles.payoutDate, { color: getStatusColor(payout.status), fontSize: 8, fontWeight: '900' }]}>
+                                            {payout.status.toUpperCase()}
+                                        </Text>
+                                    </View>
+                                </View>
+                            </View>
+                        ))
+                    ) : (
+                        <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="receipt-outline" size={50} color={colors.textSecondary} />
+                            <Text style={[styles.emptyTitle, { color: colors.text }]}>NO TRANSACTIONS YET</Text>
+                            <Text style={[styles.emptyDesc, { color: colors.textSecondary }]}>
+                                When students purchase your courses, earnings will appear here.
+                            </Text>
+                        </View>
+                    )}
+                </ScrollView>
+            )}
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    content: { padding: 20, paddingBottom: 40 },
-    pageTitle: { fontSize: 26, fontWeight: 'bold' },
-    pageSubtitle: { fontSize: 14, marginTop: 4, marginBottom: 20 },
+    content: { padding: 25, paddingBottom: 40 },
+    pageTitle: { fontSize: 24, fontWeight: '900', letterSpacing: 1 },
+    pageSubtitle: { fontSize: 10, marginTop: 4, marginBottom: 25, fontWeight: '700', letterSpacing: 0.5 },
 
     // Bank card
-    bankCard: { borderRadius: 16, padding: 18, borderWidth: 1, marginBottom: 20 },
-    bankIconBg: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-    bankTitle: { fontSize: 15, fontWeight: 'bold' },
-    bankDesc: { fontSize: 12, marginTop: 2 },
-    connectBtn: { marginTop: 15, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-    connectBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 15 },
+    bankCard: { borderRadius: 20, padding: 20, borderWidth: 1, marginBottom: 20 },
+    bankIconBg: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    bankTitle: { fontSize: 14, fontWeight: '900', letterSpacing: 1 },
+    bankDesc: { fontSize: 9, marginTop: 2, fontWeight: '700' },
+    connectBtn: { marginTop: 15, height: 44, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+    connectBtnText: { color: '#F0FFFF', fontWeight: '900', fontSize: 11, letterSpacing: 1 },
 
     // Earnings cards
-    earningsRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-    earningCard: { flex: 1, borderRadius: 16, padding: 15, alignItems: 'center', borderWidth: 1, gap: 6 },
-    earningAmount: { fontSize: 18, fontWeight: 'bold' },
-    earningLabel: { fontSize: 11 },
-
-    // Info card
-    infoCard: { borderRadius: 16, padding: 18, borderWidth: 1, marginBottom: 20 },
-    infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 },
-    infoLabel: { fontSize: 14 },
-    infoValue: { fontSize: 14, fontWeight: 'bold' },
-    infoDivider: { height: 1 },
+    earningsRow: { flexDirection: 'row', gap: 10, marginBottom: 30 },
+    earningCard: { flex: 1, borderRadius: 16, padding: 15, alignItems: 'center', borderWidth: 1, gap: 5 },
+    earningAmount: { fontSize: 16, fontWeight: '900' },
+    earningLabel: { fontSize: 7, fontWeight: '900', letterSpacing: 0.5 },
 
     // Payout section
-    sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-    sectionTitle: { fontSize: 18, fontWeight: 'bold' },
-    sectionCount: { fontSize: 12 },
+    sectionHeader: { marginBottom: 15 },
+    sectionTitle: { fontSize: 14, fontWeight: '900', letterSpacing: 1.5 },
 
     // Payout card
     payoutCard: { borderRadius: 16, padding: 15, borderWidth: 1, marginBottom: 10 },
-    payoutIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-    payoutCourse: { fontSize: 14, fontWeight: '600' },
-    payoutStudent: { fontSize: 11, marginTop: 2 },
-    payoutAmount: { fontSize: 16, fontWeight: 'bold' },
-    payoutDate: { fontSize: 10, marginTop: 2 },
-    payoutStatusBadge: { marginTop: 10, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, alignSelf: 'flex-start' },
-    payoutStatusText: { fontSize: 11, fontWeight: '600' },
+    payoutIcon: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+    payoutCourse: { fontSize: 12, fontWeight: '900' },
+    payoutStudent: { fontSize: 8, marginTop: 2, fontWeight: '700', letterSpacing: 0.5 },
+    payoutAmount: { fontSize: 14, fontWeight: '900' },
+    payoutDate: { fontSize: 8, marginTop: 2 },
 
     // Empty state
-    emptyState: { borderRadius: 16, borderWidth: 1, padding: 40, alignItems: 'center' },
-    emptyTitle: { fontSize: 16, fontWeight: 'bold', marginTop: 12 },
-    emptyDesc: { fontSize: 13, textAlign: 'center', marginTop: 6, lineHeight: 18 },
+    emptyState: { borderRadius: 20, borderWidth: 1, padding: 50, alignItems: 'center' },
+    emptyTitle: { fontSize: 12, fontWeight: '900', marginTop: 15, letterSpacing: 1 },
+    emptyDesc: { fontSize: 9, textAlign: 'center', marginTop: 5, fontWeight: '700', letterSpacing: 0.5 },
 });

@@ -4,6 +4,7 @@ import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -12,7 +13,6 @@ import {
     Alert,
     Dimensions,
     FlatList,
-    Image,
     Linking,
     Modal,
     Pressable,

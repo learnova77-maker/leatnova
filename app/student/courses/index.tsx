@@ -1,14 +1,14 @@
 import AppHeader from '@/components/sidebar/AppHeader';
 import { courseApi } from '@/constants/api';
-import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
-    Image,
+    Platform,
     SafeAreaView,
     ScrollView,
     StatusBar,
@@ -18,7 +18,7 @@ import {
     View,
 } from 'react-native';
 
-export default function MyCoursesPage() {
+export default function MyCoursesCatalog() {
     const router = useRouter();
     const { colors, isDark } = useTheme();
     const [isLoading, setIsLoading] = useState(true);
@@ -47,19 +47,19 @@ export default function MyCoursesPage() {
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-            <AppHeader title="My Courses" showBack={true} />
+            <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+            <AppHeader title="COURSE LOGS" showBack={true} role="student" onBackPress={() => router.back()} />
 
             {isLoading ? (
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                    <ActivityIndicator size="large" color={Colors.primary} />
+                    <ActivityIndicator size="large" color="#00AEEF" />
                 </View>
             ) : (
                 <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                     <View style={styles.header}>
-                        <Text style={[styles.mainTitle, { color: colors.text }]}>My Courses</Text>
+                        <Text style={[styles.mainTitle, { color: colors.text }]}>ENROLLED <Text style={{ color: '#00AEEF' }}>DATA</Text></Text>
                         <Text style={[styles.subTitle, { color: colors.textSecondary }]}>
-                            {myCourses.length} Enrolled
+                            {myCourses.length} ACTIVE STREAMS
                         </Text>
                     </View>
 
@@ -68,41 +68,42 @@ export default function MyCoursesPage() {
                             <TouchableOpacity
                                 key={course.id}
                                 style={[styles.courseCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                activeOpacity={0.8}
                                 onPress={() => router.push(`/student/courses/${course.id}`)}
                             >
-                                <View style={[styles.courseImagePlaceholder, { backgroundColor: isDark ? '#1A2744' : '#F0F9FF' }]}>
+                                <View style={[styles.courseImagePlaceholder, { backgroundColor: isDark ? 'rgba(0, 174, 239, 0.1)' : 'rgba(0, 174, 239, 0.05)' }]}>
                                     {course.thumbnail ? (
                                         <Image source={{ uri: course.thumbnail }} style={styles.thumbnailImg} />
                                     ) : (
-                                        <Ionicons name="book" size={30} color={Colors.primary} />
+                                        <Ionicons name="journal-outline" size={30} color="#00AEEF" />
                                     )}
                                 </View>
                                 <View style={styles.courseDetails}>
                                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <View style={styles.categoryTag}>
-                                            <Text style={styles.categoryText}>{course.category || 'General'}</Text>
+                                        <View style={[styles.categoryTag, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)' }]}>
+                                            <Text style={[styles.categoryText, { color: colors.text }]}>{course.category || 'Course'}</Text>
                                         </View>
-                                        <View style={[styles.categoryTag, { backgroundColor: '#E8F5E9' }]}>
-                                            <Text style={[styles.categoryText, { color: '#2E7D32' }]}>Purchased</Text>
+                                        <View style={styles.purchasedTag}>
+                                            <Text style={styles.purchasedText}>SYNCED</Text>
                                         </View>
                                     </View>
 
                                     <Text style={[styles.courseTitleText, { color: colors.text }]}>{course.title}</Text>
-                                    <Text style={[styles.instructorName, { color: colors.textSecondary }]}>By {course.instructorName || 'Expert Instructor'}</Text>
+                                    <Text style={[styles.instructorName, { color: colors.textSecondary }]}>BY {course.instructorName?.toUpperCase() || 'EXPERT'}</Text>
 
-                                    <View style={styles.progressBarBg}>
-                                        <View style={[styles.progressBarFill, { width: '0%' }]} />
+                                    <View style={[styles.progressBarBg, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)' }]}>
+                                        <View style={styles.progressBarFill} />
                                     </View>
-                                    <Text style={styles.progressText}>0% Complete</Text>
+                                    <Text style={[styles.progressText, { color: colors.textSecondary }]}>0% RECEPTION</Text>
                                 </View>
                             </TouchableOpacity>
                         ))
                     ) : (
                         <View style={styles.emptyContainer}>
-                            <Ionicons name="school" size={60} color={Colors.lightGrey} />
-                            <Text style={styles.emptyText}>You haven't enrolled in any courses yet.</Text>
+                            <Ionicons name="school-outline" size={60} color={isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.05)"} />
+                            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>NO COURSES FOUND IN YOUR LIBRARY.</Text>
                             <TouchableOpacity style={styles.exploreBtn} onPress={() => router.push('/student')}>
-                                <Text style={styles.exploreBtnText}>Explore Courses</Text>
+                                <Text style={styles.exploreBtnText}>BROWSE COURSES</Text>
                             </TouchableOpacity>
                         </View>
                     )}
@@ -117,33 +118,38 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     scrollContent: {
-        padding: 20,
+        paddingHorizontal: 32,
+        paddingTop: 40,
         paddingBottom: 40,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'baseline',
-        marginBottom: 20,
+        marginBottom: 35,
     },
     mainTitle: {
-        fontSize: 24,
-        fontWeight: 'bold',
+        fontSize: 22,
+        fontWeight: '900',
+        letterSpacing: 2,
+        fontFamily: Platform.OS === 'ios' ? 'Space Grotesk' : 'SpaceGrotesk-Bold',
     },
     subTitle: {
-        fontSize: 14,
+        fontSize: 10,
+        fontWeight: '900',
+        letterSpacing: 1,
     },
     courseCard: {
         flexDirection: 'row',
-        borderRadius: 16,
-        padding: 12,
-        marginBottom: 15,
+        borderRadius: 24,
+        padding: 20,
+        marginBottom: 20,
         borderWidth: 1,
     },
     courseImagePlaceholder: {
-        width: 100,
-        height: 100,
-        borderRadius: 12,
+        width: 85,
+        height: 85,
+        borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
         overflow: 'hidden',
@@ -159,43 +165,55 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     categoryTag: {
-        backgroundColor: Colors.lightGrey,
         paddingHorizontal: 8,
         paddingVertical: 4,
-        borderRadius: 6,
+        borderRadius: 4,
         alignSelf: 'flex-start',
-        marginBottom: 6,
+        marginBottom: 8,
     },
     categoryText: {
-        fontSize: 10,
-        fontWeight: 'bold',
-        color: Colors.grey,
-        textTransform: 'uppercase',
+        fontSize: 8,
+        fontWeight: '900',
+        letterSpacing: 0.5,
+    },
+    purchasedTag: {
+        backgroundColor: 'rgba(0, 174, 239, 0.1)',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 4,
+    },
+    purchasedText: {
+        fontSize: 8,
+        fontWeight: '900',
+        color: '#00AEEF',
+        letterSpacing: 0.5,
     },
     courseTitleText: {
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: 'bold',
         marginBottom: 4,
     },
     instructorName: {
-        fontSize: 12,
-        marginBottom: 10,
+        fontSize: 9,
+        marginBottom: 12,
+        fontWeight: '900',
+        letterSpacing: 0.5,
     },
     progressBarBg: {
-        height: 6,
-        backgroundColor: '#E5E7EB',
-        borderRadius: 3,
-        marginBottom: 5,
+        height: 4,
+        borderRadius: 2,
+        marginBottom: 8,
         overflow: 'hidden',
     },
     progressBarFill: {
         height: '100%',
-        backgroundColor: Colors.primary,
-        borderRadius: 3,
+        backgroundColor: '#00AEEF',
+        width: '0%',
     },
     progressText: {
-        fontSize: 11,
-        color: '#6B7280',
+        fontSize: 9,
+        fontWeight: '900',
+        letterSpacing: 0.5,
     },
     emptyContainer: {
         alignItems: 'center',
@@ -203,21 +221,24 @@ const styles = StyleSheet.create({
         paddingVertical: 100,
     },
     emptyText: {
-        fontSize: 16,
-        color: Colors.grey,
-        marginTop: 15,
-        marginBottom: 25,
+        fontSize: 12,
+        marginTop: 20,
+        marginBottom: 30,
         textAlign: 'center',
+        fontWeight: '900',
+        letterSpacing: 1,
+        lineHeight: 20,
     },
     exploreBtn: {
-        backgroundColor: Colors.primary,
-        paddingHorizontal: 25,
-        paddingVertical: 12,
-        borderRadius: 12,
+        backgroundColor: '#00AEEF',
+        paddingHorizontal: 30,
+        paddingVertical: 15,
+        borderRadius: 10,
     },
     exploreBtnText: {
-        color: Colors.secondary,
-        fontWeight: 'bold',
-        fontSize: 16,
+        color: '#000',
+        fontWeight: '900',
+        fontSize: 11,
+        letterSpacing: 1,
     },
 });

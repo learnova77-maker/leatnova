@@ -1,46 +1,46 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
-
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
-
 export const Colors = {
-  primary: '#FFCE1A',
-  secondary: '#1A1A1A',
+  primary: '#00AEEF',
+  secondary: '#002A3A',
   white: '#FFFFFF',
-  grey: '#666666',
-  lightGrey: '#F5F5F7',
+  grey: '#bdc8d1',
+  lightGrey: '#353535',
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: '#FFCE1A',
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: '#FFCE1A',
+    text: '#1A1A1A',
+    textSecondary: '#6B7280',
+    background: '#F8F9FA',
+    surface: '#FFFFFF',
+    border: '#E5E7EB',
+    card: '#FFFFFF',
+    tint: '#00AEEF',
+    icon: '#4B5563',
+    tabIconDefault: '#9CA3AF',
+    tabIconSelected: '#00AEEF',
+    headerBg: '#FFFFFF',
+    sidebarBg: '#FFFFFF',
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: '#FFCE1A',
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: '#FFCE1A',
+    text: '#E2E2E2',
+    textSecondary: 'rgba(226, 226, 226, 0.4)',
+    background: '#000000',
+    surface: '#0A0A0A',
+    border: 'rgba(255, 255, 255, 0.08)',
+    card: 'rgba(255, 255, 255, 0.03)',
+    tint: '#00AEEF',
+    icon: '#87929b',
+    tabIconDefault: '#87929b',
+    tabIconSelected: '#00AEEF',
+    headerBg: '#000000',
+    sidebarBg: '#050505',
   },
 };
 
 export const Fonts = Platform.select({
   ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
     sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
     serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
     rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
     mono: 'ui-monospace',
   },
   default: {

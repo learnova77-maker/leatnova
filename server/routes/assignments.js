@@ -58,12 +58,24 @@ router.post('/create', async (req, res) => {
                         submittedAt: null,
                         completedAt: null
                     };
+                    // 3. Create Notification for the student
+                    const notificationRef = push(child(dbRef, `notifications/${studentId}`));
+                    updates[`notifications/${studentId}/${notificationRef.key}`] = {
+                        id: notificationRef.key,
+                        title: 'New Assignment',
+                        message: `Teacher ${teacherName} assigned a new task: ${title} in ${courseTitle}`,
+                        type: 'assignment',
+                        relatedId: assignmentRef.key,
+                        read: false,
+                        createdAt: Date.now()
+                    };
+
                     studentCount++;
                 }
             }
         }
 
-        // 3. Save teacher's assignment record
+        // 4. Save teacher's assignment record
         updates[`teacherAssignments/${teacherId}/${assignmentRef.key}`] = {
             ...assignmentData,
             studentCount
@@ -160,6 +172,18 @@ router.post('/submit', async (req, res) => {
             status: 'submitted'
         };
 
+        // 3. Create Notification for the teacher
+        const teacherNotifRef = push(child(dbRef, `notifications/${assignData.teacherId}`));
+        updates[`notifications/${assignData.teacherId}/${teacherNotifRef.key}`] = {
+            id: teacherNotifRef.key,
+            title: 'New Submission',
+            message: `Student ${studentName} submitted task: ${assignData.title} in ${assignData.courseTitle}`,
+            type: 'submission',
+            relatedId: assignmentId,
+            read: false,
+            createdAt: Date.now()
+        };
+
         await update(ref(rtdb), updates);
         res.json({ success: true, message: 'Assignment submitted successfully!' });
     } catch (err) {
@@ -212,6 +236,99 @@ router.post('/mark-complete', async (req, res) => {
 
         await update(ref(rtdb), updates);
         res.json({ success: true, message: 'Submission marked as completed!' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Mark Submission as Rejected (Teacher)
+router.post('/reject', async (req, res) => {
+    const { teacherId, assignmentId, studentId, feedback } = req.body;
+    try {
+        const updates = {};
+
+        // Update submission status
+        updates[`submissions/${teacherId}/${assignmentId}/${studentId}/status`] = 'rejected';
+        updates[`submissions/${teacherId}/${assignmentId}/${studentId}/feedback`] = feedback || 'No feedback provided';
+
+        // Update student's assignment status - resetting to pending so they can fix it
+        updates[`studentAssignments/${studentId}/${assignmentId}/status`] = 'pending';
+        updates[`studentAssignments/${studentId}/${assignmentId}/rejected`] = true;
+        updates[`studentAssignments/${studentId}/${assignmentId}/feedback`] = feedback || 'No feedback provided';
+
+        await update(ref(rtdb), updates);
+        res.json({ success: true, message: 'Submission rejected and sent back to student.' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Update Assignment (Teacher)
+router.put('/update', async (req, res) => {
+    const { assignmentId, teacherId, title, description, fileUrl, courseId } = req.body;
+    try {
+        const dbRef = ref(rtdb);
+        const updates = {};
+
+        // 1. Update main assignment record
+        updates[`assignments/${assignmentId}/title`] = title;
+        updates[`assignments/${assignmentId}/description`] = description;
+        if (fileUrl !== undefined) updates[`assignments/${assignmentId}/fileUrl`] = fileUrl;
+
+        // 2. Update teacher's record
+        updates[`teacherAssignments/${teacherId}/${assignmentId}/title`] = title;
+        updates[`teacherAssignments/${teacherId}/${assignmentId}/description`] = description;
+        if (fileUrl !== undefined) updates[`teacherAssignments/${teacherId}/${assignmentId}/fileUrl`] = fileUrl;
+
+        // 3. Update for all students in that course
+        const enrollmentsSnap = await get(child(dbRef, 'enrollments'));
+        if (enrollmentsSnap.exists()) {
+            const allEnrollments = enrollmentsSnap.val();
+            for (const studentId in allEnrollments) {
+                if (allEnrollments[studentId][courseId]) {
+                    updates[`studentAssignments/${studentId}/${assignmentId}/title`] = title;
+                    updates[`studentAssignments/${studentId}/${assignmentId}/description`] = description;
+                    if (fileUrl !== undefined) updates[`studentAssignments/${studentId}/${assignmentId}/fileUrl`] = fileUrl;
+                }
+            }
+        }
+
+        await update(ref(rtdb), updates);
+        res.json({ success: true, message: 'Assignment updated successfully!' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Delete Assignment (Teacher)
+router.delete('/:teacherId/:assignmentId/:courseId', async (req, res) => {
+    const { teacherId, assignmentId, courseId } = req.params;
+    try {
+        const dbRef = ref(rtdb);
+        const updates = {};
+
+        // 1. Remove from main assignments
+        updates[`assignments/${assignmentId}`] = null;
+
+        // 2. Remove from teacher's record
+        updates[`teacherAssignments/${teacherId}/${assignmentId}`] = null;
+
+        // 3. Remove from submissions (cleanup)
+        updates[`submissions/${teacherId}/${assignmentId}`] = null;
+
+        // 4. Remove from all students in that course
+        const enrollmentsSnap = await get(child(dbRef, 'enrollments'));
+        if (enrollmentsSnap.exists()) {
+            const allEnrollments = enrollmentsSnap.val();
+            for (const studentId in allEnrollments) {
+                if (allEnrollments[studentId][courseId]) {
+                    updates[`studentAssignments/${studentId}/${assignmentId}`] = null;
+                }
+            }
+        }
+
+        await update(ref(rtdb), updates);
+        res.json({ success: true, message: 'Assignment deleted successfully!' });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }

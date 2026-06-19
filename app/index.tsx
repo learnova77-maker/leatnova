@@ -35,7 +35,13 @@ export default function SplashScreen() {
                         const userData = JSON.parse(userDataString);
                         const { role, status } = userData;
 
-                        if (role === 'teacher') {
+                        if (role === 'school') {
+                            if (status === 'pending') {
+                                router.replace('/(auth)/approval');
+                            } else {
+                                router.replace('/principal');
+                            }
+                        } else if (role === 'teacher') {
                             if (status === 'pending') {
                                 router.replace('/(auth)/approval');
                             } else {
@@ -69,12 +75,12 @@ export default function SplashScreen() {
             <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <Animated.View style={[styles.logoContainer, animatedStyle]}>
                 <Image
-                    source={require('../assets/images/logo.png')}
+                    source={require('../assets/images/logo.jpg')}
                     style={styles.logo}
                     resizeMode="contain"
                 />
-                <Text style={[styles.appName, { color: colors.text }]}>Learnova</Text>
-                <Text style={[styles.tagline, { color: colors.textSecondary }]}>Empowering Your Learning Journey</Text>
+                <Text style={[styles.appName, { color: colors.text }]}>MALTO<Text style={{ color: '#00AEEF' }}>VERSE</Text></Text>
+                <Text style={[styles.tagline, { color: colors.textSecondary }]}>Empowering Your Intelligence Journey</Text>
             </Animated.View>
         </View>
     );

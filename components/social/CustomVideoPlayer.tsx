@@ -2,7 +2,7 @@ import { Colors } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { ResizeMode, Video } from 'expo-av';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Animated, Dimensions, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -42,6 +42,15 @@ export default function CustomVideoPlayer({ uri, shouldPlay }: Props) {
         return () => { if (hideTimeout.current) clearTimeout(hideTimeout.current); };
     }, [showControls]);
 
+    useEffect(() => {
+        if (!videoRef.current) return;
+        if (shouldPlay) {
+            videoRef.current.playAsync().catch(err => console.log('Auto-play error:', err));
+        } else {
+            videoRef.current.pauseAsync().catch(err => console.log('Auto-pause error:', err));
+        }
+    }, [shouldPlay]);
+
     const skipBackward = async () => {
         if (status.positionMillis !== undefined) {
             await videoRef.current?.setPositionAsync(Math.max(0, status.positionMillis - 10000));
@@ -75,8 +84,16 @@ export default function CustomVideoPlayer({ uri, shouldPlay }: Props) {
     };
 
     const togglePlayPause = async () => {
-        if (status.isPlaying) await videoRef.current?.pauseAsync();
-        else await videoRef.current?.playAsync();
+        if (!videoRef.current) return;
+        try {
+            if (status.isPlaying) {
+                await videoRef.current.pauseAsync();
+            } else {
+                await videoRef.current.playAsync();
+            }
+        } catch (err) {
+            console.error('Toggle play error:', err);
+        }
     };
 
     const toggleMute = () => setIsMuted(prev => !prev);
@@ -102,7 +119,14 @@ export default function CustomVideoPlayer({ uri, shouldPlay }: Props) {
                     isMuted={isMuted}
                     useNativeControls={false}
                     onPlaybackStatusUpdate={s => setStatus(s)}
+                    onError={(err) => console.error('Video error:', err)}
                 />
+
+                {!status.isLoaded && (
+                    <View style={[styles.controlsOverlay, { backgroundColor: 'rgba(0,0,0,0.2)' }]}>
+                        <ActivityIndicator size="large" color="#00AEEF" />
+                    </View>
+                )}
 
                 <Animated.View style={[styles.controlsOverlay, { opacity: controlsOpacity }]} pointerEvents={showControls ? 'auto' : 'none'}>
                     <View style={styles.centerRow}>
@@ -129,7 +153,7 @@ export default function CustomVideoPlayer({ uri, shouldPlay }: Props) {
                     </View>
                 </Animated.View>
 
-                {!showControls && !status.isPlaying && (
+                {!showControls && !status.isPlaying && status.isLoaded && (
                     <View style={styles.floatingPlay}>
                         <Ionicons name="play" size={30} color="#FFF" />
                     </View>

@@ -13,6 +13,7 @@ import {
     Alert,
     FlatList,
     KeyboardAvoidingView,
+    Linking,
     Modal,
     Platform,
     Pressable,
@@ -49,9 +50,12 @@ export default function TeacherAssignments() {
     const [taskDescription, setTaskDescription] = useState('');
     const [pickedFile, setPickedFile] = useState<any>(null);
     const [showCourseDropdown, setShowCourseDropdown] = useState(false);
+    const [editingAssignment, setEditingAssignment] = useState<any>(null);
 
     const [userId, setUserId] = useState('');
     const [userName, setUserName] = useState('');
+    const [assignmentLimit, setAssignmentLimit] = useState(10);
+    const [submissionLimit, setSubmissionLimit] = useState(10);
 
     const loadData = async () => {
         try {
@@ -102,7 +106,7 @@ export default function TeacherAssignments() {
     };
 
     const handleCreateAssignment = async () => {
-        if (!selectedCourse) {
+        if (!selectedCourse && !editingAssignment) {
             Alert.alert('Required', 'Please select a course.');
             return;
         }
@@ -113,37 +117,88 @@ export default function TeacherAssignments() {
 
         setIsSubmitting(true);
         try {
-            const res = await assignmentApi.create({
-                teacherId: userId,
-                teacherName: userName,
-                courseId: selectedCourse.id,
-                courseTitle: selectedCourse.title,
-                title: taskTitle,
-                description: taskDescription,
-                fileUrl: pickedFile?.uri || null,
-            });
+            if (editingAssignment) {
+                // Update
+                const res = await assignmentApi.update({
+                    assignmentId: editingAssignment.id,
+                    teacherId: userId,
+                    courseId: editingAssignment.courseId,
+                    title: taskTitle,
+                    description: taskDescription,
+                    fileUrl: pickedFile?.uri || editingAssignment.fileUrl || null,
+                });
+                if (res.data.success) {
+                    Alert.alert('Success', 'Assignment updated!');
+                    closeModal();
+                    loadData();
+                }
+            } else {
+                // Create
+                const res = await assignmentApi.create({
+                    teacherId: userId,
+                    teacherName: userName,
+                    courseId: selectedCourse.id,
+                    courseTitle: selectedCourse.title,
+                    title: taskTitle,
+                    description: taskDescription,
+                    fileUrl: pickedFile?.uri || null,
+                });
 
-            if (res.data.success) {
-                Alert.alert('Success', res.data.message);
-                setIsModalVisible(false);
-                setTaskTitle('');
-                setTaskDescription('');
-                setSelectedCourse(null);
-                setPickedFile(null);
-                loadData();
+                if (res.data.success) {
+                    Alert.alert('Success', res.data.message);
+                    closeModal();
+                    loadData();
+                }
             }
         } catch (err: any) {
-            Alert.alert('Error', err.response?.data?.message || 'Failed to create assignment');
+            Alert.alert('Error', err.response?.data?.message || 'Action failed');
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    const handleMarkComplete = async (submission: any) => {
-        Alert.alert('Mark Complete', `Mark ${submission.studentName}'s submission as completed?`, [
+    const handleDelete = async (assignment: any) => {
+        Alert.alert('Delete Assignment', `Are you sure you want to delete "${assignment.title}"? This will remove it for all students too.`, [
             { text: 'Cancel', style: 'cancel' },
             {
-                text: 'Complete',
+                text: 'Delete',
+                style: 'destructive',
+                onPress: async () => {
+                    try {
+                        await assignmentApi.delete(userId, assignment.id, assignment.courseId);
+                        Alert.alert('Deleted', 'Assignment removed successfully.');
+                        loadData();
+                    } catch (err) {
+                        Alert.alert('Error', 'Failed to delete assignment.');
+                    }
+                },
+            },
+        ]);
+    };
+
+    const openEditModal = (assignment: any) => {
+        setEditingAssignment(assignment);
+        setTaskTitle(assignment.title);
+        setTaskDescription(assignment.description);
+        setPickedFile(assignment.fileUrl ? { name: 'Current File', uri: assignment.fileUrl } : null);
+        setIsModalVisible(true);
+    };
+
+    const closeModal = () => {
+        setIsModalVisible(false);
+        setEditingAssignment(null);
+        setTaskTitle('');
+        setTaskDescription('');
+        setSelectedCourse(null);
+        setPickedFile(null);
+        setShowCourseDropdown(false);
+    };
+
+    const handleMarkComplete = async (submission: any) => {
+        Alert.alert('Approve Submission', `Mark ${submission.studentName}'s submission as completed?`, [
+            { text: 'Cancel', style: 'cancel' },
+            {
+                text: 'Approve',
                 onPress: async () => {
                     try {
                         await assignmentApi.markComplete({
@@ -151,14 +206,44 @@ export default function TeacherAssignments() {
                             assignmentId: submission.assignmentId,
                             studentId: submission.studentId,
                         });
-                        Alert.alert('Done', 'Submission marked as completed!');
+                        Alert.alert('Success', 'Submission approved!');
                         loadData();
                     } catch (err) {
-                        Alert.alert('Error', 'Failed to mark as completed.');
+                        Alert.alert('Error', 'Failed to approve submission.');
                     }
                 },
             },
         ]);
+    };
+
+    const handleReject = async (submission: any) => {
+        Alert.prompt(
+            'Reject Submission',
+            'Enter feedback for the student (optional):',
+            async (feedback) => {
+                try {
+                    await assignmentApi.rejectSubmission({
+                        teacherId: userId,
+                        assignmentId: submission.assignmentId,
+                        studentId: submission.studentId,
+                        feedback: feedback
+                    });
+                    Alert.alert('Rejected', 'Submission has been rejected and sent back.');
+                    loadData();
+                } catch (err) {
+                    Alert.alert('Error', 'Failed to reject submission.');
+                }
+            },
+            'plain-text'
+        );
+    };
+
+    const viewSubmission = (url: string) => {
+        if (url) {
+            Linking.openURL(url);
+        } else {
+            Alert.alert('No file', 'No submission file found.');
+        }
     };
 
     const renderAssignmentItem = ({ item }: any) => (
@@ -179,9 +264,19 @@ export default function TeacherAssignments() {
             {item.description ? (
                 <Text style={[styles.descText, { color: colors.textSecondary }]} numberOfLines={2}>{item.description}</Text>
             ) : null}
-            <Text style={[styles.dateText, { color: colors.textSecondary }]}>
-                {new Date(item.createdAt).toLocaleDateString()}
-            </Text>
+            <View style={styles.cardBottom}>
+                <Text style={[styles.dateText, { color: colors.textSecondary }]}>
+                    {new Date(item.createdAt).toLocaleDateString()}
+                </Text>
+                <View style={styles.actionRow}>
+                    <TouchableOpacity style={styles.iconBtn} onPress={() => openEditModal(item)}>
+                        <Ionicons name="create-outline" size={18} color={Colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.iconBtn} onPress={() => handleDelete(item)}>
+                        <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                    </TouchableOpacity>
+                </View>
+            </View>
         </View>
     );
 
@@ -198,25 +293,53 @@ export default function TeacherAssignments() {
                 <View style={{ flex: 1 }}>
                     <Text style={[styles.cardTitle, { color: colors.text }]}>{item.studentName}</Text>
                     <Text style={[styles.cardSub, { color: colors.textSecondary }]}>{item.assignmentTitle}</Text>
-                </View>
-                {item.status !== 'completed' && (
+
                     <TouchableOpacity
-                        style={styles.completeBtn}
-                        onPress={() => handleMarkComplete(item)}
+                        style={styles.viewSubBtn}
+                        onPress={() => viewSubmission(item.submissionUrl)}
                     >
-                        <Ionicons name="checkmark" size={18} color="#FFF" />
-                        <Text style={styles.completeBtnText}>Complete</Text>
+                        <Ionicons name="eye-outline" size={14} color={Colors.primary} />
+                        <Text style={[styles.viewSubText, { color: Colors.primary }]}>View Submission</Text>
                     </TouchableOpacity>
+                </View>
+                {item.status === 'submitted' && (
+                    <View style={{ gap: 8 }}>
+                        <TouchableOpacity
+                            style={styles.completeBtn}
+                            onPress={() => handleMarkComplete(item)}
+                        >
+                            <Ionicons name="checkmark" size={16} color="#FFF" />
+                            <Text style={styles.completeBtnText}>Approve</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.completeBtn, { backgroundColor: '#EF4444' }]}
+                            onPress={() => handleReject(item)}
+                        >
+                            <Ionicons name="close" size={16} color="#FFF" />
+                            <Text style={styles.completeBtnText}>Reject</Text>
+                        </TouchableOpacity>
+                    </View>
                 )}
             </View>
             <View style={styles.subMeta}>
-                <Text style={[styles.dateText, { color: colors.textSecondary }]}>
-                    Submitted: {new Date(item.submittedAt).toLocaleDateString()}
-                </Text>
+                <View>
+                    <Text style={[styles.dateText, { color: colors.textSecondary }]}>
+                        Submitted: {new Date(item.submittedAt).toLocaleDateString()}
+                    </Text>
+                    <Text style={[styles.fileLabel, { color: colors.textSecondary }]}>
+                        File: {item.submissionFileName || 'submission'}
+                    </Text>
+                </View>
                 {item.status === 'completed' && (
                     <View style={styles.completedTag}>
                         <Ionicons name="checkmark-done" size={14} color="#10B981" />
-                        <Text style={{ color: '#10B981', fontWeight: '600', fontSize: 12 }}>Completed</Text>
+                        <Text style={{ color: '#10B981', fontWeight: '600', fontSize: 12 }}>Approved</Text>
+                    </View>
+                )}
+                {item.status === 'rejected' && (
+                    <View style={styles.completedTag}>
+                        <Ionicons name="close-circle" size={14} color="#EF4444" />
+                        <Text style={{ color: '#EF4444', fontWeight: '600', fontSize: 12 }}>Rejected</Text>
                     </View>
                 )}
             </View>
@@ -259,7 +382,7 @@ export default function TeacherAssignments() {
                         </View>
 
                         <FlatList
-                            data={assignments}
+                            data={assignments.slice(0, assignmentLimit)}
                             keyExtractor={(item) => item.id}
                             renderItem={renderAssignmentItem}
                             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} tintColor={Colors.primary} />}
@@ -271,13 +394,20 @@ export default function TeacherAssignments() {
                                     </View>
                             }
                             contentContainerStyle={{ paddingBottom: 100 }}
+                            ListFooterComponent={
+                                assignments.length > assignmentLimit ? (
+                                    <TouchableOpacity style={{ padding: 20, alignItems: 'center' }} onPress={() => setAssignmentLimit(prev => prev + 10)}>
+                                        <Text style={{ color: Colors.primary, fontWeight: 'bold' }}>Load More</Text>
+                                    </TouchableOpacity>
+                                ) : null
+                            }
                         />
                     </View>
                 )}
 
                 {activeTab === 'submissions' && (
                     <FlatList
-                        data={submissions}
+                        data={submissions.slice(0, submissionLimit)}
                         keyExtractor={(item) => item.id}
                         renderItem={renderSubmissionItem}
                         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} tintColor={Colors.primary} />}
@@ -289,14 +419,21 @@ export default function TeacherAssignments() {
                                 </View>
                         }
                         contentContainerStyle={{ paddingBottom: 100 }}
+                        ListFooterComponent={
+                            submissions.length > submissionLimit ? (
+                                <TouchableOpacity style={{ padding: 20, alignItems: 'center' }} onPress={() => setSubmissionLimit(prev => prev + 10)}>
+                                    <Text style={{ color: Colors.primary, fontWeight: 'bold' }}>Load More</Text>
+                                </TouchableOpacity>
+                            ) : null
+                        }
                     />
                 )}
             </View>
 
-            {/* Create Assignment Modal */}
+            {/* Create/Edit Assignment Modal */}
             <Modal visible={isModalVisible} animationType="fade" transparent>
                 <View style={styles.modalOverlay}>
-                    <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsModalVisible(false)}>
+                    <Pressable style={StyleSheet.absoluteFill} onPress={closeModal}>
                         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} />
                     </Pressable>
                     <KeyboardAvoidingView
@@ -306,45 +443,49 @@ export default function TeacherAssignments() {
                     >
                         <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                             <View style={styles.modalHeader}>
-                                <Text style={[styles.modalTitle, { color: colors.text }]}>New Assignment</Text>
-                                <TouchableOpacity onPress={() => setIsModalVisible(false)}>
+                                <Text style={[styles.modalTitle, { color: colors.text }]}>
+                                    {editingAssignment ? 'Edit Assignment' : 'New Assignment'}
+                                </Text>
+                                <TouchableOpacity onPress={closeModal}>
                                     <Ionicons name="close" size={22} color={colors.text} />
                                 </TouchableOpacity>
                             </View>
 
                             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 15, paddingBottom: 30 }}>
-                                {/* Course Selector */}
-                                <View>
-                                    <Text style={[styles.label, { color: colors.text }]}>Select Course</Text>
-                                    <TouchableOpacity
-                                        style={[styles.selector, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                                        onPress={() => setShowCourseDropdown(!showCourseDropdown)}
-                                    >
-                                        <Text style={{ color: selectedCourse ? colors.text : colors.textSecondary, fontSize: 14 }}>
-                                            {selectedCourse ? selectedCourse.title : 'Choose a course...'}
-                                        </Text>
-                                        <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
-                                    </TouchableOpacity>
+                                {/* Course Selector - Hide when editing as course shouldn't change easily */}
+                                {!editingAssignment && (
+                                    <View>
+                                        <Text style={[styles.label, { color: colors.text }]}>Select Course</Text>
+                                        <TouchableOpacity
+                                            style={[styles.selector, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                                            onPress={() => setShowCourseDropdown(!showCourseDropdown)}
+                                        >
+                                            <Text style={{ color: selectedCourse ? colors.text : colors.textSecondary, fontSize: 14 }}>
+                                                {selectedCourse ? selectedCourse.title : 'Choose a course...'}
+                                            </Text>
+                                            <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
+                                        </TouchableOpacity>
 
-                                    {showCourseDropdown && (
-                                        <View style={[styles.dropdown, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                                            <ScrollView nestedScrollEnabled style={{ maxHeight: 150 }}>
-                                                {courses.map((c) => (
-                                                    <TouchableOpacity
-                                                        key={c.id}
-                                                        style={styles.dropdownItem}
-                                                        onPress={() => {
-                                                            setSelectedCourse(c);
-                                                            setShowCourseDropdown(false);
-                                                        }}
-                                                    >
-                                                        <Text style={{ color: colors.text, fontSize: 14 }}>{c.title}</Text>
-                                                    </TouchableOpacity>
-                                                ))}
-                                            </ScrollView>
-                                        </View>
-                                    )}
-                                </View>
+                                        {showCourseDropdown && (
+                                            <View style={[styles.dropdown, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                                <ScrollView nestedScrollEnabled style={{ maxHeight: 150 }}>
+                                                    {courses.map((c) => (
+                                                        <TouchableOpacity
+                                                            key={c.id}
+                                                            style={styles.dropdownItem}
+                                                            onPress={() => {
+                                                                setSelectedCourse(c);
+                                                                setShowCourseDropdown(false);
+                                                            }}
+                                                        >
+                                                            <Text style={{ color: colors.text, fontSize: 14 }}>{c.title}</Text>
+                                                        </TouchableOpacity>
+                                                    ))}
+                                                </ScrollView>
+                                            </View>
+                                        )}
+                                    </View>
+                                )}
 
                                 {/* Title */}
                                 <View>
@@ -400,7 +541,9 @@ export default function TeacherAssignments() {
                                     {isSubmitting ? (
                                         <ActivityIndicator color={Colors.secondary} />
                                     ) : (
-                                        <Text style={styles.submitBtnText}>Assign to Students</Text>
+                                        <Text style={styles.submitBtnText}>
+                                            {editingAssignment ? 'Save Changes' : 'Assign to Students'}
+                                        </Text>
                                     )}
                                 </TouchableOpacity>
                             </ScrollView>
@@ -463,6 +606,19 @@ const styles = StyleSheet.create({
         paddingVertical: 4,
         borderRadius: 8,
     },
+    cardBottom: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 5,
+    },
+    actionRow: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    iconBtn: {
+        padding: 4,
+    },
     subMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
     completedTag: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     completeBtn: {
@@ -485,6 +641,21 @@ const styles = StyleSheet.create({
         borderRadius: 12,
     },
     assignBtnText: { color: Colors.secondary, fontWeight: 'bold', fontSize: 14 },
+    viewSubBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 6,
+    },
+    viewSubText: {
+        fontSize: 13,
+        fontWeight: '600',
+        textDecorationLine: 'underline',
+    },
+    fileLabel: {
+        fontSize: 11,
+        marginTop: 2,
+    },
     emptyState: { alignItems: 'center', marginTop: 60, gap: 10 },
     emptyText: { fontSize: 15 },
 

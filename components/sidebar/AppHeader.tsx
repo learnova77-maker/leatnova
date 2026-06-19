@@ -17,7 +17,7 @@ interface HeaderProps {
     toggleSidebar?: () => void;
     showLive?: boolean;
     onLivePress?: () => void;
-    role?: 'teacher' | 'student';
+    role?: 'teacher' | 'student' | 'school';
     showBack?: boolean;
     onBackPress?: () => void;
     showPost?: boolean;
@@ -73,10 +73,9 @@ export default function AppHeader({
     }, []);
 
     const handleProfilePress = () => {
-        router.push({
-            pathname: '/profile',
-            params: { role }
-        });
+        if (user?.uid) {
+            router.push(`/social/profile?userId=${user.uid}`);
+        }
     };
 
     const getAvatarSource = () => {
@@ -96,16 +95,26 @@ export default function AppHeader({
         <View style={[styles.header, { backgroundColor: colors.headerBg }]}>
             {showBack ? (
                 <TouchableOpacity style={styles.menuIcon} onPress={onBackPress}>
-                    <Ionicons name="arrow-back" size={26} color={colors.text} />
+                    <Ionicons name="arrow-back" size={26} color="#00AEEF" />
                 </TouchableOpacity>
             ) : (
                 <TouchableOpacity style={styles.menuIcon} onPress={toggleSidebar}>
-                    <Ionicons name="menu-outline" size={26} color={colors.text} />
+                    <Ionicons name="menu-outline" size={26} color="#00AEEF" />
                 </TouchableOpacity>
             )}
 
             <View style={styles.headerBrand}>
-                <Text style={[styles.brandText, { color: colors.text }]}>{title}</Text>
+                <Text style={[styles.brandText, { color: colors.text, letterSpacing: 2 }]}>
+                    {(title.toUpperCase() === 'MATLOVERSE' || title.toUpperCase() === 'MALTOVERSE' || title === 'MaltoVerse') ? (
+                        <>
+                            {title.toUpperCase().startsWith('MATLO') ? 'MATLO' : 'MALTO'}<Text style={{ color: '#00AEEF', fontWeight: '900', textShadowColor: '#00AEEF', textShadowRadius: isDark ? 15 : 0 }}>VERSE</Text>
+                        </>
+                    ) : (title === 'Learnova' ? (
+                        <>
+                            LEARN<Text style={{ color: '#00AEEF', fontWeight: '900' }}>OVA</Text>
+                        </>
+                    ) : title.toUpperCase())}
+                </Text>
             </View>
 
             <View style={styles.headerRight}>
@@ -115,15 +124,25 @@ export default function AppHeader({
                     </TouchableOpacity>
                 )}
 
+                {role === 'student' && (
+                    <TouchableOpacity
+                        style={[styles.actionIcon, { flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, marginRight: 8 }]}
+                        onPress={() => router.push('/student/wallet')}
+                    >
+                        <Ionicons name="sparkles" size={16} color="#F59E0B" />
+                        <Text style={{ marginLeft: 4, fontWeight: 'bold', color: '#F59E0B', fontSize: 13 }}>Coins</Text>
+                    </TouchableOpacity>
+                )}
+
                 {showExplore && role === 'student' && (
                     <TouchableOpacity style={styles.actionIcon} onPress={() => router.push('/student/explore')}>
-                        <Ionicons name="compass-outline" size={26} color={colors.text} />
+                        <Ionicons name="compass-outline" size={26} color="#00AEEF" />
                     </TouchableOpacity>
                 )}
 
                 <View style={styles.userInfo}>
                     <TouchableOpacity style={styles.avatarTrigger} onPress={onAvatarPress || handleProfilePress}>
-                        <View style={[styles.avatarBox, { borderColor: colors.border }]}>
+                        <View style={[styles.avatarBox, { borderColor: '#00AEEF' }]}>
                             <Image
                                 source={getAvatarSource()}
                                 style={styles.avatarImage}
@@ -143,10 +162,10 @@ export default function AppHeader({
                     onPress={onNotificationsPress || (() => router.push('/notifications'))}
                 >
                     <View>
-                        <Ionicons name="notifications-outline" size={24} color={colors.text} />
-                        {(notificationCount || unreadCount) > 0 ? (
+                        <Ionicons name="notifications-outline" size={24} color="#00AEEF" />
+                        {(notificationCount !== undefined ? notificationCount : unreadCount) > 0 ? (
                             <View style={styles.badge}>
-                                <Text style={styles.badgeText}>{notificationCount || unreadCount}</Text>
+                                <Text style={styles.badgeText}>{notificationCount !== undefined ? notificationCount : unreadCount}</Text>
                             </View>
                         ) : null}
                     </View>
@@ -203,11 +222,17 @@ const styles = StyleSheet.create({
         padding: 2,
     },
     avatarBox: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        width: 38,
+        height: 38,
+        borderRadius: 19,
         overflow: 'hidden',
         borderWidth: 1,
+        borderColor: '#00AEEF',
+        shadowColor: '#00AEEF',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
+        elevation: 4,
     },
     avatarImage: {
         width: '100%',

@@ -5,6 +5,7 @@ import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -12,7 +13,6 @@ import {
     ActivityIndicator,
     Alert,
     FlatList,
-    Image,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -58,7 +58,10 @@ export default function TeacherCourseList() {
     const [newCourseDescription, setNewCourseDescription] = useState('');
     const [thumbnail, setThumbnail] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [courseType, setCourseType] = useState<'recorded' | 'live' | null>(null);
+    const [showTypeSelection, setShowTypeSelection] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
+    const [editingCourse, setEditingCourse] = useState<any>(null);
 
     const onRefresh = React.useCallback(async () => {
         setRefreshing(true);
@@ -134,27 +137,54 @@ export default function TeacherCourseList() {
                     price: newCoursePrice || '0',
                     category: newCourseCategory || 'General',
                     description: newCourseDescription.trim(),
-                    thumbnail: thumbnail, // Send thumbnail URI
-                    status: 'active'
+                    thumbnail: thumbnail,
+                    status: 'active',
+                    courseType: courseType || 'recorded'
                 };
 
-                const response = await courseApi.createCourse(courseData);
-                if (response.data.success) {
-                    setIsCreateModalVisible(false);
-                    setNewCourseTitle('');
-                    setNewCoursePrice('');
-                    setNewCourseCategory('');
-                    setNewCourseDescription('');
-                    setThumbnail(null);
-                    loadCourses();
-                    Alert.alert('Success', 'Course created! Now you can add modules and lectures.');
+                if (editingCourse) {
+                    const response = await courseApi.updateCourse(editingCourse.id, { title: newCourseTitle });
+                    if (response.data.success) {
+                        Alert.alert('Success', 'Course updated!');
+                        closeModal();
+                        loadCourses();
+                    }
+                } else {
+                    const response = await courseApi.createCourse(courseData);
+                    if (response.data.success) {
+                        Alert.alert('Success', 'Course created! Now you can add modules and lectures.');
+                        closeModal();
+                        loadCourses();
+                    }
                 }
             }
         } catch (err) {
-            Alert.alert('Error', 'Failed to create course.');
+            Alert.alert('Error', 'Action failed.');
         } finally {
             setIsSubmitting(false);
         }
+    };
+
+    const openEditModal = (course: any) => {
+        setEditingCourse(course);
+        setNewCourseTitle(course.title);
+        setNewCoursePrice(course.price || '0');
+        setNewCourseCategory(course.category || '');
+        setNewCourseDescription(course.description || '');
+        setThumbnail(course.thumbnail || null);
+        setCourseType(course.courseType || 'recorded');
+        setIsCreateModalVisible(true);
+    };
+
+    const closeModal = () => {
+        setIsCreateModalVisible(false);
+        setEditingCourse(null);
+        setNewCourseTitle('');
+        setNewCoursePrice('');
+        setNewCourseCategory('');
+        setNewCourseDescription('');
+        setThumbnail(null);
+        setCourseType(null);
     };
 
     const handleDeleteCourse = (id: string) => {
@@ -184,11 +214,10 @@ export default function TeacherCourseList() {
     const renderLeftActions = (id: string) => {
         return (
             <TouchableOpacity
-                style={styles.deleteAction}
+                style={[styles.deleteAction, { backgroundColor: 'transparent' }]}
                 onPress={() => handleDeleteCourse(id)}
             >
-                <Ionicons name="trash-outline" size={24} color="#FFF" />
-                <Text style={styles.deleteActionText}>Delete</Text>
+                <Ionicons name="trash-outline" size={26} color="#EF4444" />
             </TouchableOpacity>
         );
     };
@@ -208,7 +237,7 @@ export default function TeacherCourseList() {
                     <Text style={[styles.title, { color: colors.text }]}>All Courses</Text>
                     <TouchableOpacity
                         style={styles.addBtn}
-                        onPress={() => setIsCreateModalVisible(true)}
+                        onPress={() => setShowTypeSelection(true)}
                     >
                         <Ionicons name="add" size={20} color={Colors.secondary} />
                         <Text style={styles.addBtnText}>Create New</Text>
@@ -246,11 +275,23 @@ export default function TeacherCourseList() {
                                         <Text style={[styles.courseTitle, { color: colors.text }]}>{item.title}</Text>
                                         <View style={styles.courseMeta}>
                                             <Text style={[styles.metaText, { color: colors.textSecondary }]}>{item.category || 'General'}</Text>
-                                            <Text style={[styles.metaDot, { color: colors.textSecondary }]}>•</Text>
-                                            <Text style={[styles.metaText, { color: colors.textSecondary }]}>{item.price === '0' || !item.price ? 'Free' : `$${item.price}`}</Text>
                                         </View>
                                     </View>
-                                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                        <TouchableOpacity
+                                            style={styles.actionCardBtn}
+                                            onPress={() => router.push(`/teacher/analytics/${item.id}`)}
+                                        >
+                                            <Ionicons name="bar-chart" size={18} color="#10B981" />
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={styles.actionCardBtn}
+                                            onPress={() => openEditModal(item)}
+                                        >
+                                            <Ionicons name="create-outline" size={18} color={Colors.primary} />
+                                        </TouchableOpacity>
+                                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                                    </View>
                                 </TouchableOpacity>
                             </Swipeable>
                         )}
@@ -265,10 +306,10 @@ export default function TeacherCourseList() {
                 )}
             </View>
 
-            {/* Create Course Modal */}
+            {/* Create/Edit Course Modal */}
             <Modal visible={isCreateModalVisible} animationType="fade" transparent>
                 <View style={styles.modalOverlay}>
-                    <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsCreateModalVisible(false)}>
+                    <Pressable style={StyleSheet.absoluteFill} onPress={closeModal}>
                         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} />
                     </Pressable>
                     <KeyboardAvoidingView
@@ -278,8 +319,10 @@ export default function TeacherCourseList() {
                     >
                         <View style={[styles.modalContentCompact, { backgroundColor: colors.card }]}>
                             <View style={styles.modalHeaderCompact}>
-                                <Text style={[styles.modalTitleCompact, { color: colors.text }]}>Create Course</Text>
-                                <TouchableOpacity onPress={() => setIsCreateModalVisible(false)} style={styles.closeBtn}>
+                                <Text style={[styles.modalTitleCompact, { color: colors.text }]}>
+                                    {editingCourse ? 'Edit Course' : 'Create Course'}
+                                </Text>
+                                <TouchableOpacity onPress={closeModal} style={styles.closeBtn}>
                                     <Ionicons name="close" size={20} color={colors.text} />
                                 </TouchableOpacity>
                             </View>
@@ -308,6 +351,18 @@ export default function TeacherCourseList() {
                                         placeholderTextColor={colors.textSecondary}
                                         value={newCourseTitle}
                                         onChangeText={setNewCourseTitle}
+                                    />
+                                </View>
+
+                                <View style={styles.inputGroup}>
+                                    <Text style={[styles.label, { color: colors.text }]}>Course Price (Coins)</Text>
+                                    <TextInput
+                                        style={[styles.inputCompact, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                                        placeholder="e.g. 10 (Leave 0 for Free)"
+                                        placeholderTextColor={colors.textSecondary}
+                                        keyboardType="numeric"
+                                        value={newCoursePrice}
+                                        onChangeText={setNewCoursePrice}
                                     />
                                 </View>
 
@@ -362,22 +417,6 @@ export default function TeacherCourseList() {
                                     </View>
                                 </View>
 
-                                <View style={styles.inputGroup}>
-                                    <Text style={[styles.label, { color: colors.text }]}>Price ($)</Text>
-                                    <TextInput
-                                        style={[styles.inputCompact, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-                                        placeholder="0 for free"
-                                        placeholderTextColor={colors.textSecondary}
-                                        keyboardType="numeric"
-                                        value={newCoursePrice}
-                                        onChangeText={setNewCoursePrice}
-                                    />
-                                    {newCoursePrice !== '' && parseFloat(newCoursePrice) > 0 && (
-                                        <Text style={[styles.profitText, { color: colors.textSecondary }]}>
-                                            Your Profit: <Text style={{ fontWeight: 'bold', color: '#16A34A' }}>${(parseFloat(newCoursePrice) * 0.55).toFixed(2)}</Text> (55% share)
-                                        </Text>
-                                    )}
-                                </View>
 
                                 <TouchableOpacity
                                     style={[styles.submitBtnCompact, isSubmitting && { opacity: 0.7 }]}
@@ -387,12 +426,69 @@ export default function TeacherCourseList() {
                                     {isSubmitting ? (
                                         <ActivityIndicator color={Colors.secondary} />
                                     ) : (
-                                        <Text style={styles.submitBtnTextCompact}>Launch Course</Text>
+                                        <Text style={styles.submitBtnTextCompact}>
+                                            {editingCourse ? 'Save Changes' : 'Launch Course'}
+                                        </Text>
                                     )}
                                 </TouchableOpacity>
                             </ScrollView>
                         </View>
                     </KeyboardAvoidingView>
+                </View>
+            </Modal>
+
+            {/* Course Type Selection Modal */}
+            <Modal visible={showTypeSelection} animationType="slide" transparent>
+                <View style={styles.modalOverlay}>
+                    <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowTypeSelection(false)}>
+                        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }} />
+                    </Pressable>
+                    <View style={[styles.typeModalContent, { backgroundColor: colors.card }]}>
+                        <TouchableOpacity
+                            style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, padding: 5 }}
+                            onPress={() => setShowTypeSelection(false)}
+                        >
+                            <Ionicons name="close-circle" size={28} color={colors.textSecondary} />
+                        </TouchableOpacity>
+                        <Text style={[styles.typeModalTitle, { color: colors.text, marginTop: 5 }]}>Launch New Course</Text>
+                        <Text style={[styles.typeModalSub, { color: colors.textSecondary }]}>Select your preferred delivery format.</Text>
+
+                        <View style={styles.typeOptions}>
+                            <TouchableOpacity
+                                style={[styles.typeOption, { borderColor: colors.border }]}
+                                onPress={() => {
+                                    setCourseType('recorded');
+                                    setShowTypeSelection(false);
+                                    setIsCreateModalVisible(true);
+                                }}
+                            >
+                                <View style={[styles.typeIconBox, { backgroundColor: '#3B82F620' }]}>
+                                    <Ionicons name="play-circle-outline" size={24} color="#3B82F6" />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={[styles.typeOptionLabel, { color: colors.text }]}>Recorded Course</Text>
+                                    <Text style={styles.typeOptionDesc}>Pre-recorded videos and modules.</Text>
+                                </View>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.typeOption, { borderColor: colors.border }]}
+                                onPress={() => {
+                                    setCourseType('live');
+                                    setShowTypeSelection(false);
+                                    setIsCreateModalVisible(true);
+                                }}
+                            >
+                                <View style={[styles.typeIconBox, { backgroundColor: '#10B98120' }]}>
+                                    <Ionicons name="videocam-outline" size={24} color="#10B981" />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={[styles.typeOptionLabel, { color: colors.text }]}>Live Course</Text>
+                                    <Text style={styles.typeOptionDesc}>Real-time interactive streaming.</Text>
+                                </View>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
                 </View>
             </Modal>
         </SafeAreaView >
@@ -413,6 +509,14 @@ const styles = StyleSheet.create({
     courseMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 8 },
     metaText: { fontSize: 12, color: Colors.grey },
     metaDot: { fontSize: 12, color: Colors.grey },
+    actionCardBtn: {
+        width: 32,
+        height: 32,
+        borderRadius: 8,
+        backgroundColor: 'rgba(0,0,0,0.05)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     emptyState: { alignItems: 'center', marginTop: 100, gap: 15 },
     emptyText: { color: Colors.grey, fontSize: 16, textAlign: 'center' },
 
@@ -436,14 +540,12 @@ const styles = StyleSheet.create({
     previewImage: { width: '100%', height: '100%' },
     thumbnailImg: { width: '100%', height: '100%', borderRadius: 12 },
     deleteAction: {
-        backgroundColor: '#EF4444',
         justifyContent: 'center',
         alignItems: 'center',
-        width: 80,
+        width: 60,
         height: '86%',
-        borderRadius: 16,
         marginVertical: 4,
-        marginLeft: 10,
+        marginLeft: 5,
     },
     deleteActionText: {
         color: '#FFF',
@@ -451,4 +553,22 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         marginTop: 4,
     },
+    editCardBtn: {
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        backgroundColor: Colors.primary + '10',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 8,
+    },
+    // Type Selection Modal
+    typeModalContent: { width: '97%', alignSelf: 'center', borderRadius: 30, padding: 25, paddingBottom: 35, marginBottom: 10 },
+    typeModalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' },
+    typeModalSub: { fontSize: 13, textAlign: 'center', marginBottom: 25, paddingHorizontal: 20 },
+    typeOptions: { gap: 15 },
+    typeOption: { padding: 18, borderRadius: 20, borderWidth: 1, alignItems: 'center', flexDirection: 'row', gap: 18 },
+    typeIconBox: { width: 50, height: 50, borderRadius: 15, justifyContent: 'center', alignItems: 'center' },
+    typeOptionLabel: { fontSize: 18, fontWeight: 'bold' },
+    typeOptionDesc: { fontSize: 12, color: '#999', textAlign: 'left', lineHeight: 16, flex: 1 },
 });

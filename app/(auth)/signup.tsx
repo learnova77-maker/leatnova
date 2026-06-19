@@ -1,8 +1,9 @@
 import { authApi } from '@/constants/api';
-import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState } from 'react';
@@ -21,40 +22,29 @@ import {
 } from 'react-native';
 
 const SUBJECT_SUGGESTIONS = [
-    'Web Development',
-    'Mobile App Development',
-    'React Native',
-    'English (IELTS/TOEFL)',
-    'Mathematics',
-    'Physics',
-    'Chemistry',
-    'Graphic Design',
-    'Digital Marketing',
-    'Chinese Language (HSK)',
-    'Data Science',
-    'UI/UX Design',
-    'Business Management'
+    'Web Development', 'Mobile App Development', 'React Native', 'English (IELTS/TOEFL)',
+    'Mathematics', 'Physics', 'Chemistry', 'Graphic Design', 'Digital Marketing',
+    'Chinese Language (HSK)', 'Data Science', 'UI/UX Design', 'Business Management'
 ];
 
 export default function SignUpScreen() {
-    const { googleName, googleEmail, isGoogleAuth, uid } = useLocalSearchParams<{ googleName: string, googleEmail: string, isGoogleAuth: string, uid: string }>();
+    const { googleName, googleEmail, isGoogleAuth, uid, googlePhoto } = useLocalSearchParams<{ googleName: string, googleEmail: string, isGoogleAuth: string, uid: string, googlePhoto: string }>();
     const router = useRouter();
     const { colors, isDark } = useTheme();
 
-    // Form State
     const [fullName, setFullName] = useState(googleName || '');
+    const [username, setUsername] = useState('');
     const [email, setEmail] = useState(googleEmail || '');
-    const [password, setPassword] = useState(isGoogleAuth === 'true' ? 'google-auth-pass' : '');
     const [expertise, setExpertise] = useState('');
     const [bio, setBio] = useState('');
     const [experience, setExperience] = useState('');
     const [website, setWebsite] = useState('');
     const [qualification, setQualification] = useState('');
-
-    const [photoUri, setPhotoUri] = useState<string | null>(null);
+    const [photoUri, setPhotoUri] = useState<string | null>(googlePhoto || null);
     const [idCardUri, setIdCardUri] = useState<string | null>(null);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [filteredSuggestions, setFilteredSuggestions] = useState<string[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
 
     const handleImagePick = async (type: 'photo' | 'id') => {
         const result = await ImagePicker.launchImageLibraryAsync({
@@ -63,7 +53,6 @@ export default function SignUpScreen() {
             aspect: type === 'photo' ? [1, 1] : [4, 3],
             quality: 0.8,
         });
-
         if (!result.canceled) {
             if (type === 'photo') setPhotoUri(result.assets[0].uri);
             else setIdCardUri(result.assets[0].uri);
@@ -72,10 +61,8 @@ export default function SignUpScreen() {
 
     const handleExpertiseChange = (text: string) => {
         setExpertise(text);
-        if (text.length > 0) {
-            const filtered = SUBJECT_SUGGESTIONS.filter(item =>
-                item.toLowerCase().includes(text.toLowerCase())
-            );
+        if (text && text.length > 0) {
+            const filtered = SUBJECT_SUGGESTIONS.filter(item => item.toLowerCase().includes(text.toLowerCase()));
             setFilteredSuggestions(filtered);
             setShowSuggestions(filtered.length > 0);
         } else {
@@ -83,33 +70,16 @@ export default function SignUpScreen() {
         }
     };
 
-    const selectSuggestion = (suggestion: string) => {
-        setExpertise(suggestion);
-        setShowSuggestions(false);
-    };
-
-    const [isLoading, setIsLoading] = useState(false);
-
     const handleSignUp = async () => {
-        // Validation Logic
-        if (!fullName || !email || !password || !expertise || !bio || !experience || !qualification) {
-            Alert.alert('Missing Info', 'Please fill in all mandatory fields.');
+        if (!fullName || !email || !username || !expertise || !experience || !qualification) {
+            Alert.alert('Incomplete Form', 'Please fill in all required fields.');
             return;
         }
 
-        if (password.length < 6) {
-            Alert.alert('Short Password', 'Security requirement: Password must be at least 6 characters.');
-            return;
-        }
-
-        const wordCount = bio.trim().split(/\s+/).filter(Boolean).length;
-        if (wordCount < 50) {
-            Alert.alert('Bio Required', 'Please provide a bio of at least 50 words.');
-            return;
-        }
-
-        if (wordCount > 200) {
-            Alert.alert('Bio Too Long', 'Bio exceeds the 200-word limit.');
+        const bioTrimmed = (bio || '').trim();
+        const wordCount = bioTrimmed ? bioTrimmed.split(/\s+/).filter(Boolean).length : 0;
+        if (bioTrimmed && (wordCount < 50 || wordCount > 200)) {
+            Alert.alert('Bio Length Error', 'Bio must be between 50 and 200 words.');
             return;
         }
 
@@ -117,8 +87,8 @@ export default function SignUpScreen() {
         try {
             const formData = new FormData();
             formData.append('fullName', fullName);
+            formData.append('username', username.toLowerCase());
             formData.append('email', email);
-            formData.append('password', password);
             formData.append('role', 'teacher');
             formData.append('expertise', expertise);
             formData.append('bio', bio);
@@ -131,437 +101,236 @@ export default function SignUpScreen() {
                 formData.append('isGoogleAuth', 'true');
             }
 
-            if (photoUri) {
+            if (photoUri && typeof photoUri === 'string' && !photoUri.startsWith('http')) {
                 const uriParts = photoUri.split('.');
-                const fileType = uriParts[uriParts.length - 1];
-                formData.append('photo', {
-                    uri: photoUri,
-                    name: `photo.${fileType}`,
-                    type: `image/${fileType}`,
-                } as any);
+                const fileType = uriParts[uriParts.length - 1] || 'jpg';
+                formData.append('photo', { uri: photoUri, name: `photo.${fileType}`, type: `image/${fileType}` } as any);
+            } else if (photoUri && typeof photoUri === 'string' && photoUri.startsWith('http')) {
+                formData.append('photoUrl', photoUri);
             }
 
-            if (idCardUri) {
+            if (idCardUri && typeof idCardUri === 'string') {
                 const uriParts = idCardUri.split('.');
-                const fileType = uriParts[uriParts.length - 1];
-                formData.append('idCard', {
-                    uri: idCardUri,
-                    name: `idcard.${fileType}`,
-                    type: `image/${fileType}`,
-                } as any);
+                const fileType = uriParts[uriParts.length - 1] || 'jpg';
+                formData.append('idCard', { uri: idCardUri, name: `idcard.${fileType}`, type: `image/${fileType}` } as any);
             }
 
-            const response = await authApi.signup(formData, {
-                'Content-Type': 'multipart/form-data',
-            });
-
-            if (response.data.success) {
-                router.replace('/(auth)/approval');
-            }
+            const response = await authApi.signup(formData, { 'Content-Type': 'multipart/form-data' });
+            if (response.data.success) router.replace('/(auth)/approval');
         } catch (err: any) {
-            console.error('Signup Error:', err);
-            const errMsg = err.response?.data?.message || 'Connection lost. Please try again.';
-            Alert.alert('Submission Failed', errMsg);
+            Alert.alert('Registration Failed', err.response?.data?.message || 'Could not create your account.');
         } finally {
             setIsLoading(false);
         }
     };
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-            <StatusBar style={isDark ? 'light' : 'dark'} />
-            <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={{ flex: 1 }}
-            >
-                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                    <TouchableOpacity style={[styles.backButton, { backgroundColor: colors.inputBg }]} onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={24} color={isDark ? colors.text : Colors.secondary} />
-                    </TouchableOpacity>
+        <View style={styles.container}>
+            <StatusBar style="dark" />
+            <LinearGradient
+                colors={['#FFFFFF', '#F0F9FF', '#FFFFFF']}
+                style={StyleSheet.absoluteFill}
+            />
 
-                    <View style={styles.header}>
-                        <Text style={[styles.title, { color: colors.text }]}>Create Account</Text>
-                        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Join Learnova and share your expertise!</Text>
-                    </View>
-
-                    {/* Profile Photo Placeholder */}
-                    <View style={styles.photoSection}>
-                        <TouchableOpacity
-                            style={[styles.photoCircle, { backgroundColor: colors.inputBg, borderColor: colors.border }, photoUri && styles.uploadedCircle]}
-                            onPress={() => handleImagePick('photo')}
-                        >
-                            <Ionicons
-                                name={photoUri ? "checkmark-circle" : "camera"}
-                                size={30}
-                                color={photoUri ? "#27AE60" : Colors.grey}
-                            />
-                            <Text style={[styles.photoLabel, photoUri && { color: "#27AE60" }]}>
-                                {photoUri ? 'Photo Added' : 'Add Photo'}
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.form}>
-                        {isGoogleAuth === 'true' ? (
-                            <View style={{ alignItems: 'center', marginBottom: 20 }}>
-                                <Ionicons name="checkmark-circle" size={40} color="#27AE60" />
-                                <Text style={[{ fontSize: 18, fontWeight: 'bold', color: colors.text, marginTop: 10 }]}>Authenticated via Google!</Text>
-                                <Text style={[{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: 5 }]}>
-                                    Signed in as {googleName} ({googleEmail}). Fill the rest of the details below.
-                                </Text>
-                            </View>
-                        ) : (
-                            <>
-                                {/* Full Name */}
-                                <View style={styles.inputContainer}>
-                                    <Text style={[styles.label, { color: colors.text }]}>Full Name *</Text>
-                                    <TextInput
-                                        style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                                        placeholder="e.g. Ali Ahmed"
-                                        placeholderTextColor="#999"
-                                        value={fullName}
-                                        onChangeText={setFullName}
-                                    />
-                                </View>
-
-                                {/* Email */}
-                                <View style={styles.inputContainer}>
-                                    <Text style={[styles.label, { color: colors.text }]}>Email Address *</Text>
-                                    <TextInput
-                                        style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                                        placeholder="example@email.com"
-                                        keyboardType="email-address"
-                                        autoCapitalize="none"
-                                        placeholderTextColor="#999"
-                                        value={email}
-                                        onChangeText={setEmail}
-                                    />
-                                </View>
-
-                                {/* Password */}
-                                <View style={styles.inputContainer}>
-                                    <Text style={[styles.label, { color: colors.text }]}>Password *</Text>
-                                    <TextInput
-                                        style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                                        placeholder="••••••••"
-                                        secureTextEntry
-                                        placeholderTextColor="#999"
-                                        value={password}
-                                        onChangeText={setPassword}
-                                    />
-                                </View>
-                            </>
-                        )}
-
-                        {/* Expertise / Subject with Suggestions */}
-                        <View style={[styles.inputContainer, { zIndex: 1000 }]}>
-                            <Text style={[styles.label, { color: colors.text }]}>Expertise / Subject Area *</Text>
-                            <TextInput
-                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                                placeholder="e.g. Web Development"
-                                placeholderTextColor="#999"
-                                value={expertise}
-                                onChangeText={handleExpertiseChange}
-                                onFocus={() => expertise.length > 0 && setShowSuggestions(true)}
-                            />
-                            {showSuggestions && (
-                                <View style={[styles.suggestionsList, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                                    {filteredSuggestions.map((item, index) => (
-                                        <TouchableOpacity
-                                            key={index}
-                                            style={[styles.suggestionItem, { borderBottomColor: colors.border }]}
-                                            onPress={() => selectSuggestion(item)}
-                                        >
-                                            <Text style={[styles.suggestionText, { color: colors.text }]}>{item}</Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                            )}
-                        </View>
-
-                        {/* Experience */}
-                        <View style={styles.inputContainer}>
-                            <Text style={[styles.label, { color: colors.text }]}>Experience (Years) *</Text>
-                            <TextInput
-                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                                placeholder="e.g. 5"
-                                keyboardType="number-pad"
-                                placeholderTextColor="#999"
-                                value={experience}
-                                onChangeText={setExperience}
-                            />
-                        </View>
-
-                        {/* Qualification */}
-                        <View style={styles.inputContainer}>
-                            <Text style={[styles.label, { color: colors.text }]}>Qualification *</Text>
-                            <TextInput
-                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                                placeholder="e.g. Masters in CS"
-                                placeholderTextColor="#999"
-                                value={qualification}
-                                onChangeText={setQualification}
-                            />
-                        </View>
-
-                        {/* Short Bio */}
-                        <View style={styles.inputContainer}>
-                            <Text style={[styles.label, { color: colors.text }]}>Short Bio (50-200 words) *</Text>
-                            <TextInput
-                                style={[
-                                    styles.input,
-                                    { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border },
-                                    styles.textArea,
-                                    (bio.trim().split(/\s+/).filter(Boolean).length > 200) && { borderColor: '#E74C3C' }
-                                ]}
-                                placeholder="Tell students about yourself..."
-                                placeholderTextColor="#999"
-                                multiline
-                                numberOfLines={6}
-                                value={bio}
-                                onChangeText={setBio}
-                                textAlignVertical="top"
-                            />
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                                {bio.trim().split(/\s+/).filter(Boolean).length > 200 && (
-                                    <Text style={{ fontSize: 12, color: '#E74C3C', marginLeft: 4 }}>Too long! Max 200 words.</Text>
-                                )}
-                                <Text style={[
-                                    styles.wordCount,
-                                    { flex: 1 },
-                                    bio.trim().split(/\s+/).filter(Boolean).length > 200 && { color: '#E74C3C' }
-                                ]}>
-                                    {bio.trim().split(/\s+/).filter(Boolean).length} / 200 words
-                                </Text>
-                            </View>
-                        </View>
-
-                        {/* LinkedIn / Website */}
-                        <View style={styles.inputContainer}>
-                            <Text style={[styles.label, { color: colors.text }]}>LinkedIn / Website (Optional)</Text>
-                            <TextInput
-                                style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
-                                placeholder="https://linkedin.com/in/yourprofile"
-                                placeholderTextColor="#999"
-                                autoCapitalize="none"
-                                value={website}
-                                onChangeText={setWebsite}
-                            />
-                        </View>
-
-                        {/* ID Verification Placeholder */}
-                        <View style={styles.inputContainer}>
-                            <Text style={[styles.label, { color: colors.text }]}>ID Verification (Mandatory for Teachers) *</Text>
-                            <TouchableOpacity
-                                style={[styles.uploadBox, { backgroundColor: colors.inputBg, borderColor: colors.border }, idCardUri && styles.uploadedBox]}
-                                onPress={() => handleImagePick('id')}
-                            >
-                                <Ionicons
-                                    name={idCardUri ? "checkmark-circle" : "cloud-upload-outline"}
-                                    size={24}
-                                    color={idCardUri ? "#27AE60" : Colors.grey}
-                                />
-                                <Text style={[styles.uploadText, idCardUri && { color: "#27AE60" }]}>
-                                    {idCardUri ? 'ID File Selected' : 'Upload ID Card / Passport'}
-                                </Text>
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+                <SafeAreaView style={{ flex: 1 }}>
+                    <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                        <View style={styles.navHeader}>
+                            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                                <Ionicons name="arrow-back-outline" size={28} color="#00AEEF" />
                             </TouchableOpacity>
                         </View>
 
-                        <TouchableOpacity
-                            style={[styles.signUpButton, isLoading && { opacity: 0.7 }]}
-                            activeOpacity={0.8}
-                            onPress={handleSignUp}
-                            disabled={isLoading}
-                        >
-                            {isLoading ? (
-                                <ActivityIndicator color={Colors.secondary} />
-                            ) : (
-                                <Text style={styles.signUpButtonText}>Register as Instructor</Text>
-                            )}
-                        </TouchableOpacity>
-                    </View>
+                        <View style={styles.header}>
+                            <Text style={styles.welcomeSubSmall}>• TEACHER REGISTRATION</Text>
+                            <Text style={[styles.title, { color: '#1A1A1A' }]}>Join as <Text style={{ color: '#00AEEF' }}>Teacher</Text></Text>
+                            <Text style={[styles.subtitle, { color: '#666' }]}>Complete your profile to share your knowledge.</Text>
+                        </View>
 
-                    <View style={styles.footer}>
-                        <Text style={styles.footerText}>Already have an account? </Text>
-                        <TouchableOpacity onPress={() => router.replace('/login')}>
-                            <Text style={styles.loginText}>Login</Text>
-                        </TouchableOpacity>
-                    </View>
-                </ScrollView>
+                        <View style={styles.photoSection}>
+                            <TouchableOpacity
+                                style={[styles.photoCircle, { backgroundColor: '#F8F9FA', borderColor: '#00AEEF' }]}
+                                onPress={() => handleImagePick('photo')}
+                            >
+                                {photoUri ? <Image source={{ uri: photoUri }} style={styles.photoImage} /> : (
+                                    <View style={{ alignItems: 'center' }}>
+                                        <Ionicons name="camera-outline" size={32} color="#00AEEF" />
+                                        <Text style={styles.photoPlaceholderText}>ADD PHOTO</Text>
+                                    </View>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.form}>
+                            <View style={styles.inputContainer}>
+                                <Text style={styles.label}>FULL NAME</Text>
+                                <TextInput
+                                    style={[styles.input, { backgroundColor: '#F8F9FA', color: '#1A1A1A', borderColor: 'rgba(0,174,239,0.1)' }]}
+                                    placeholder="Enter your name"
+                                    placeholderTextColor="#AAA"
+                                    value={fullName}
+                                    onChangeText={setFullName}
+                                />
+                            </View>
+
+                            <View style={styles.inputContainer}>
+                                <Text style={styles.label}>USERNAME</Text>
+                                <TextInput
+                                    style={[styles.input, { backgroundColor: '#F8F9FA', color: '#1A1A1A', borderColor: 'rgba(0,174,239,0.1)' }]}
+                                    placeholder="Enter a unique username"
+                                    placeholderTextColor="#AAA"
+                                    autoCapitalize="none"
+                                    value={username}
+                                    onChangeText={setUsername}
+                                />
+                            </View>
+
+                            <View style={styles.inputContainer}>
+                                <Text style={styles.label}>EMAIL ADDRESS</Text>
+                                <TextInput
+                                    style={[styles.input, { backgroundColor: '#F8F9FA', color: '#1A1A1A', borderColor: 'rgba(0,174,239,0.1)' }]}
+                                    placeholder="your@email.com"
+                                    placeholderTextColor="#AAA"
+                                    value={email}
+                                    onChangeText={setEmail}
+                                    autoCapitalize="none"
+                                />
+                            </View>
+
+                            <View style={[styles.inputContainer, { zIndex: 1000 }]}>
+                                <Text style={styles.label}>SUBJECT EXPERTISE</Text>
+                                <TextInput
+                                    style={[styles.input, { backgroundColor: '#F8F9FA', color: '#1A1A1A', borderColor: 'rgba(0,174,239,0.1)' }]}
+                                    placeholder="e.g. MATHEMATICS"
+                                    placeholderTextColor="#AAA"
+                                    value={expertise}
+                                    onChangeText={handleExpertiseChange}
+                                    onFocus={() => expertise.length > 0 && setShowSuggestions(true)}
+                                />
+                                {showSuggestions && (
+                                    <View style={[styles.suggestionsList, { backgroundColor: '#FFFFFF', borderColor: '#00AEEF', borderWidth: 1 }]}>
+                                        {filteredSuggestions.map((item, index) => (
+                                            <TouchableOpacity key={index} style={styles.suggestionItem} onPress={() => { setExpertise(item); setShowSuggestions(false); }}>
+                                                <Text style={{ color: '#1A1A1A', fontSize: 13, fontWeight: '700' }}>{item.toUpperCase()}</Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                )}
+                            </View>
+
+                            <View style={styles.inputContainer}>
+                                <Text style={styles.label}>YEARS OF EXPERIENCE</Text>
+                                <TextInput
+                                    style={[styles.input, { backgroundColor: '#F8F9FA', color: '#1A1A1A', borderColor: 'rgba(0,174,239,0.1)' }]}
+                                    placeholder="e.g. 10"
+                                    placeholderTextColor="#AAA"
+                                    keyboardType="number-pad"
+                                    value={experience}
+                                    onChangeText={setExperience}
+                                />
+                            </View>
+
+                            <View style={styles.inputContainer}>
+                                <Text style={styles.label}>QUALIFICATIONS</Text>
+                                <TextInput
+                                    style={[styles.input, { backgroundColor: '#F8F9FA', color: '#1A1A1A', borderColor: 'rgba(0,174,239,0.1)' }]}
+                                    placeholder="e.g. Masters in Math"
+                                    placeholderTextColor="#AAA"
+                                    value={qualification}
+                                    onChangeText={setQualification}
+                                />
+                            </View>
+
+                            <View style={styles.inputContainer}>
+                                <Text style={styles.label}>ABOUT YOU (BIO - OPTIONAL)</Text>
+                                <TextInput
+                                    style={[styles.input, styles.textArea, { backgroundColor: '#F8F9FA', color: '#1A1A1A', borderColor: 'rgba(0,174,239,0.1)' }]}
+                                    placeholder="Write a brief bio about yourself..."
+                                    placeholderTextColor="#AAA"
+                                    multiline
+                                    numberOfLines={6}
+                                    value={bio}
+                                    onChangeText={setBio}
+                                    textAlignVertical="top"
+                                />
+                                <Text style={[styles.wordCount, { color: bio.trim().split(/\s+/).filter(Boolean).length > 200 ? '#FF0000' : '#00AEEF' }]}>
+                                    {bio.trim().split(/\s+/).filter(Boolean).length} / 200 WORDS
+                                </Text>
+                            </View>
+
+                            <View style={styles.inputContainer}>
+                                <Text style={styles.label}>WEBSITE / LINKEDIN</Text>
+                                <TextInput
+                                    style={[styles.input, { backgroundColor: '#F8F9FA', color: '#1A1A1A', borderColor: 'rgba(0,174,239,0.1)' }]}
+                                    placeholder="https://"
+                                    placeholderTextColor="#AAA"
+                                    autoCapitalize="none"
+                                    value={website}
+                                    onChangeText={setWebsite}
+                                />
+                            </View>
+
+                            <View style={styles.inputContainer}>
+                                <Text style={styles.label}>ID CARD / PASSPORT *</Text>
+                                <TouchableOpacity
+                                    style={[styles.uploadBox, { backgroundColor: '#F8F9FA', borderColor: idCardUri ? '#00AEEF' : 'rgba(0,174,239,0.1)' }]}
+                                    onPress={() => handleImagePick('id')}
+                                >
+                                    <Ionicons name={idCardUri ? "shield-checkmark" : "cloud-upload-outline"} size={20} color="#00AEEF" />
+                                    <Text style={[styles.uploadText, { color: idCardUri ? '#00AEEF' : '#666' }]}>
+                                        {idCardUri ? 'DOCUMENT ATTACHED' : 'UPLOAD ID CARD'}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            <TouchableOpacity
+                                style={[styles.signUpButton, isLoading && { opacity: 0.7 }]}
+                                onPress={handleSignUp}
+                                disabled={isLoading}
+                            >
+                                {isLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.signUpButtonText}>REGISTER NOW</Text>}
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.footer}>
+                            <Text style={styles.footerText}>ALREADY HAVE AN ACCOUNT? </Text>
+                            <TouchableOpacity onPress={() => router.replace('/login')}>
+                                <Text style={styles.loginText}>LOGIN</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </ScrollView>
+                </SafeAreaView>
             </KeyboardAvoidingView>
-        </SafeAreaView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: Colors.white,
-    },
-    scrollContent: {
-        paddingHorizontal: 24,
-        paddingBottom: 60,
-    },
-    backButton: {
-        marginTop: 20,
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: Colors.lightGrey,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    header: {
-        marginTop: 30,
-        marginBottom: 20,
-    },
-    title: {
-        fontSize: 32,
-        fontWeight: 'bold',
-        color: Colors.secondary,
-    },
-    subtitle: {
-        fontSize: 16,
-        color: Colors.grey,
-        marginTop: 8,
-    },
-    photoSection: {
-        alignItems: 'center',
-        marginBottom: 30,
-    },
-    photoCircle: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
-        backgroundColor: Colors.lightGrey,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 2,
-        borderColor: '#EEE',
-        borderStyle: 'dashed',
-    },
-    uploadedCircle: {
-        borderColor: '#27AE60',
-        backgroundColor: '#F0FFF4',
-        borderStyle: 'solid',
-    },
-    photoLabel: {
-        fontSize: 12,
-        color: Colors.grey,
-        marginTop: 4,
-    },
-    form: {
-        gap: 20,
-    },
-    inputContainer: {
-        gap: 8,
-        position: 'relative',
-    },
-    label: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: Colors.secondary,
-        marginLeft: 4,
-    },
-    input: {
-        width: '100%',
-        height: 56,
-        backgroundColor: Colors.lightGrey,
-        borderRadius: 16,
-        paddingHorizontal: 20,
-        fontSize: 16,
-        color: Colors.secondary,
-        borderWidth: 1,
-        borderColor: '#EEE',
-    },
-    textArea: {
-        height: 120,
-        paddingTop: 15,
-    },
-    wordCount: {
-        fontSize: 12,
-        color: Colors.grey,
-        textAlign: 'right',
-        marginRight: 10,
-    },
-    suggestionsList: {
-        position: 'absolute',
-        top: 85,
-        left: 0,
-        right: 0,
-        backgroundColor: Colors.white,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#EEE',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 10,
-        elevation: 5,
-        zIndex: 10000,
-    },
-    suggestionItem: {
-        padding: 15,
-        borderBottomWidth: 1,
-        borderBottomColor: '#F5F5F5',
-    },
-    suggestionText: {
-        fontSize: 14,
-        color: Colors.secondary,
-    },
-    uploadBox: {
-        height: 56,
-        backgroundColor: Colors.lightGrey,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: '#EEE',
-        borderStyle: 'dashed',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 10,
-    },
-    uploadedBox: {
-        borderColor: '#27AE60',
-        backgroundColor: '#F0FFF4',
-        borderStyle: 'solid',
-    },
-    uploadText: {
-        fontSize: 14,
-        color: Colors.grey,
-    },
-    signUpButton: {
-        width: '100%',
-        height: 60,
-        backgroundColor: Colors.primary,
-        borderRadius: 16,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginTop: 20,
-        shadowColor: Colors.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
-    },
-    signUpButtonText: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: Colors.secondary,
-    },
-    footer: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginTop: 40,
-    },
-    footerText: {
-        fontSize: 16,
-        color: Colors.grey,
-    },
-    loginText: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: Colors.primary,
-    },
+    container: { flex: 1, backgroundColor: '#FFFFFF' },
+    navHeader: { paddingTop: Platform.OS === 'android' ? 20 : 0, marginBottom: 20 },
+    scrollContent: { paddingHorizontal: 32, paddingBottom: 60, flexGrow: 1 },
+    backButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'flex-start' },
+    header: { marginBottom: 30 },
+    welcomeSubSmall: { fontSize: 10, fontWeight: '900', color: '#00AEEF', letterSpacing: 2, marginBottom: 12 },
+    title: { fontSize: 32, fontWeight: '900', letterSpacing: -1, fontFamily: Platform.OS === 'ios' ? 'Space Grotesk' : 'SpaceGrotesk-Bold' },
+    subtitle: { fontSize: 13, marginTop: 12, fontWeight: '600', letterSpacing: 0.3 },
+    photoSection: { alignItems: 'center', marginBottom: 40 },
+    photoCircle: { width: 110, height: 110, borderRadius: 24, borderWidth: 1, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+    photoImage: { width: '100%', height: '100%' },
+    photoPlaceholderText: { fontSize: 8, fontWeight: '900', color: '#00AEEF', marginTop: 8, letterSpacing: 1 },
+    form: { gap: 24 },
+    inputContainer: { gap: 12, position: 'relative' },
+    label: { fontSize: 10, fontWeight: '900', color: '#00AEEF', letterSpacing: 2 },
+    input: { height: 60, borderRadius: 12, paddingHorizontal: 20, fontSize: 14, borderWidth: 1, fontWeight: '700' },
+    textArea: { height: 130, paddingTop: 16 },
+    wordCount: { fontSize: 9, fontWeight: '900', textAlign: 'right', marginTop: 4, letterSpacing: 1 },
+    suggestionsList: { position: 'absolute', top: 90, left: 0, right: 0, borderRadius: 12, elevation: 15, zIndex: 10000, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 20 },
+    suggestionItem: { padding: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(0,174,239,0.1)' },
+    uploadBox: { height: 60, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 },
+    uploadText: { fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+    signUpButton: { height: 60, backgroundColor: '#00AEEF', borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginTop: 20, elevation: 8, shadowColor: '#00AEEF', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10 },
+    signUpButtonText: { color: '#FFF', fontSize: 12, fontWeight: '900', letterSpacing: 1.5 },
+    footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 50, gap: 8, paddingBottom: 60 },
+    footerText: { fontSize: 10, fontWeight: '900', color: '#666', letterSpacing: 1 },
+    loginText: { color: '#00AEEF', fontSize: 10, fontWeight: '900', letterSpacing: 1 },
 });

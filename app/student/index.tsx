@@ -1,65 +1,59 @@
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { courseApi } from '@/constants/api';
-import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
-    Image,
+    Dimensions,
+    ImageBackground,
+    Platform,
     RefreshControl,
-    SafeAreaView,
     ScrollView,
     StatusBar,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
+
+const { width } = Dimensions.get('window');
 
 export default function StudentIndex() {
     const router = useRouter();
     const { colors, isDark } = useTheme();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [userName, setUserName] = useState('Student');
+    const [userName, setUserName] = useState('STUDENT');
     const [isLoading, setIsLoading] = useState(true);
     const [myCourses, setMyCourses] = useState<any[]>([]);
-    const [recentVideo, setRecentVideo] = useState<any>(null);
     const [refreshing, setRefreshing] = useState(false);
+    const [isOffline, setIsOffline] = useState(false);
+    const [offlineVideos, setOfflineVideos] = useState<any[]>([]);
 
     const loadInitialData = async () => {
         try {
-            // Load User Name
             const userData = await AsyncStorage.getItem('user');
             let uid = '';
             if (userData) {
                 const user = JSON.parse(userData);
                 uid = user.uid;
-                setUserName(user.fullName.split(' ')[0]);
+                setUserName(user.fullName.split(' ')[0].toUpperCase());
             }
 
-            // Fetch enrolled courses
             if (uid) {
-                try {
-                    const enrolledRes = await courseApi.getEnrolledCourses(uid);
-                    if (enrolledRes.data.success) {
-                        setMyCourses(enrolledRes.data.courses);
-                    }
-                } catch (err) {
-                    console.error('Error fetching enrolled courses:', err);
+                const enrolledRes = await courseApi.getEnrolledCourses(uid);
+                if (enrolledRes.data.success) {
+                    setMyCourses(enrolledRes.data.courses);
                 }
             }
-
-            // Load Recent Video
-            const recentVideoData = await AsyncStorage.getItem('recent_video');
-            if (recentVideoData) {
-                setRecentVideo(JSON.parse(recentVideoData));
-            }
         } catch (err) {
-            console.error('Error loading student dashboard user data:', err);
+            console.error('Error loading student dashboard:', err);
         } finally {
             setIsLoading(false);
         }
@@ -72,8 +66,24 @@ export default function StudentIndex() {
     }, []);
 
     useEffect(() => {
+        const unsubscribe = NetInfo.addEventListener(state => {
+            setIsOffline(!state.isConnected);
+        });
         loadInitialData();
+        loadOfflineVideos();
+        return () => unsubscribe();
     }, []);
+
+    const loadOfflineVideos = async () => {
+        try {
+            const data = await AsyncStorage.getItem('downloaded_videos');
+            if (data) {
+                setOfflineVideos(JSON.parse(data));
+            }
+        } catch (e) {
+            console.error('Error loading offline videos:', e);
+        }
+    };
 
     const renderCourseCard = (course: any) => (
         <TouchableOpacity
@@ -81,33 +91,56 @@ export default function StudentIndex() {
             style={[styles.courseCard, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => router.push(`/student/courses/${course.id}`)}
         >
-            <View style={[styles.courseImagePlaceholder, { backgroundColor: isDark ? '#1A2744' : '#F0F9FF' }]}>
+            <View style={[styles.courseImageWrapper, { backgroundColor: isDark ? 'rgba(0, 174, 239, 0.05)' : 'rgba(0, 174, 239, 0.03)' }]}>
                 {course.thumbnail ? (
                     <Image source={{ uri: course.thumbnail }} style={styles.thumbnailImg} />
                 ) : (
-                    <Ionicons name="book" size={30} color={Colors.primary} />
+                    <Ionicons name="journal-outline" size={26} color="#00AEEF" />
                 )}
             </View>
             <View style={styles.courseDetails}>
-                <View style={styles.categoryTag}>
-                    <Text style={styles.categoryText}>{course.category || 'General'}</Text>
+                <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                    <View style={[styles.categoryBadge, { backgroundColor: isDark ? 'rgba(0, 174, 239, 0.1)' : 'rgba(0, 174, 239, 0.05)' }]}>
+                        <Text style={styles.categoryText}>{course.category || 'COURSE'}</Text>
+                    </View>
+                    <View style={[styles.categoryBadge, { backgroundColor: course.type === 'Live' ? '#00AEEF' : (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)') }]}>
+                        <Text style={[styles.categoryText, { color: course.type === 'Live' ? '#000' : '#00AEEF' }]}>
+                            {course.type === 'Live' ? 'LIVE' : 'RECORDED'}
+                        </Text>
+                    </View>
+                    {course.reviews && Object.keys(course.reviews).length > 0 && (
+                        <View style={[styles.categoryBadge, { backgroundColor: '#FBBF24' }]}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                <Ionicons name="star" size={10} color="#000" />
+                                <Text style={[styles.categoryText, { color: '#000' }]}>{Object.keys(course.reviews).length}</Text>
+                            </View>
+                        </View>
+                    )}
                 </View>
                 <Text style={[styles.courseTitleText, { color: colors.text }]}>{course.title}</Text>
-                <Text style={[styles.instructorName, { color: colors.textSecondary }]}>By {course.instructorName || 'Expert Instructor'}</Text>
-                <View style={styles.purchaseBadge}>
-                    <Ionicons name="checkmark-circle" size={14} color="#16A34A" />
-                    <Text style={styles.purchaseText}>Enrolled</Text>
+                <Text style={[styles.instructorName, { color: colors.textSecondary }]}>BY {course.instructorName?.toUpperCase() || 'EXPERT'}</Text>
+                <View style={styles.enrolledStatus}>
+                    <Ionicons name="shield-checkmark" size={14} color="#00AEEF" />
+                    <Text style={styles.enrolledText}>ENROLLED</Text>
                 </View>
             </View>
         </TouchableOpacity>
     );
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+            <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+
+            {isDark && (
+                <LinearGradient
+                    colors={['#000000', '#001A2A', '#000000']}
+                    style={StyleSheet.absoluteFill}
+                />
+            )}
+
             <AppSidebar role="student" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader
-                title="Dashboard"
+                title="MALTOVERSE"
                 toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
                 role="student"
                 showExplore
@@ -115,109 +148,139 @@ export default function StudentIndex() {
 
             {isLoading ? (
                 <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={Colors.primary} />
+                    <ActivityIndicator size="large" color="#00AEEF" />
                 </View>
             ) : (
                 <ScrollView
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.scrollContent}
                     refreshControl={
-                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} tintColor={Colors.primary} />
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#00AEEF']} tintColor="#00AEEF" />
                     }
                 >
-                    <View style={styles.welcomeBox}>
-                        <View>
-                            <Text style={[styles.welcomeTitle, { color: colors.text }]}>Hello, {userName}!</Text>
-                            <Text style={[styles.welcomeSub, { color: colors.textSecondary }]}>Ready to continue your learning journey?</Text>
-                        </View>
-                        <View style={[styles.subBadge, { borderColor: colors.primary, backgroundColor: isDark ? colors.card : '#FFF9E5' }]}>
-                            <Ionicons name="star" size={14} color={Colors.primary} />
-                        </View>
+                    <View style={styles.headerTitleContainer}>
+                        <Text style={styles.welcomeSubSmall}>• WELCOME BACK, {userName}</Text>
+                        <Text style={[styles.mainTagline, { color: colors.text }]}>
+                            Learn the <Text style={{ color: '#00AEEF' }}>Skills</Text>.{"\n"}
+                            Own the <Text style={{ color: '#00AEEF' }}>Future</Text>.
+                        </Text>
                     </View>
 
-                    <View style={styles.statsRow}>
+                    <View style={styles.searchRow}>
+                        <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="search-outline" size={20} color="#00AEEF" />
+                            <Text style={[styles.searchText, { color: colors.textSecondary }]}>Search courses...</Text>
+                        </View>
+                        <TouchableOpacity style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="options-outline" size={20} color="#00AEEF" />
+                        </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity
+                        activeOpacity={0.9}
+                        style={styles.bannerWrapper}
+                        onPress={() => router.push('/student/explore')}
+                    >
+                        <ImageBackground
+                            source={require('../../assets/images/dashboard_banner.jpg')}
+                            style={styles.bannerBackground}
+                            imageStyle={{ borderRadius: 24 }}
+                        >
+                            <LinearGradient
+                                colors={isDark ? ['rgba(0,0,0,0.8)', 'rgba(0,174,239,0.3)'] : ['rgba(255,255,255,0.4)', 'rgba(0,174,239,0.2)']}
+                                start={{ x: 0, y: 0.5 }}
+                                end={{ x: 1, y: 0.5 }}
+                                style={styles.bannerOverlay}
+                            >
+                                <View style={styles.bannerContent}>
+                                    <Text style={[styles.bannerMainText, { color: isDark ? '#FFF' : '#000000ff' }]}>LEARN MORE{"\n"}EARN MORE</Text>
+                                    <View style={styles.exploreBadge}>
+                                        <Text style={styles.exploreBadgeText}>EXPLORE NOW</Text>
+                                        <Ionicons name="arrow-forward" size={14} color="#000" />
+                                    </View>
+                                </View>
+                            </LinearGradient>
+                        </ImageBackground>
+                    </TouchableOpacity>
+
+                    <View style={styles.sectionHeader}>
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>QUICK <Text style={{ color: '#00AEEF' }}>ACCESS</Text></Text>
+                    </View>
+
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statsRow}>
                         {[
-                            { id: '1', title: 'Videos', icon: 'play-outline', color: '#4A90E2', path: '/student/videos' },
-                            { id: '2', title: 'Certificates', icon: 'ribbon-outline', color: '#9B51E0', path: '/student/certificates' },
-                            { id: '3', title: 'Social', icon: 'chatbubbles-outline', color: '#F2994A', path: '/student/social' },
+                            { id: '1', title: 'Videos', subtitle: 'Watch & Learn', icon: 'play-outline', color: '#00AEEF', path: '/student/videos' },
+                            { id: '2', title: 'Certificates', subtitle: 'My Awards', icon: 'ribbon-outline', color: '#00AEEF', path: '/student/certificates' },
+                            { id: '3', title: 'Social', subtitle: 'Community', icon: 'people-outline', color: '#00AEEF', path: '/student/social' },
+                            { id: '4', title: 'Explore', subtitle: 'Browse All', icon: 'compass-outline', color: '#00AEEF', path: '/student/explore' },
                         ].map((item) => (
                             <TouchableOpacity
                                 key={item.id}
-                                style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                activeOpacity={0.8}
                                 onPress={() => router.push(item.path as any)}
+                                style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}
                             >
-                                <View style={[styles.statIcon, { backgroundColor: item.color + '15' }]}>
-                                    <Ionicons name={item.icon as any} size={20} color={item.color} />
+                                <View style={styles.statIcon}>
+                                    <Ionicons name={item.icon as any} size={18} color="#00AEEF" />
                                 </View>
                                 <Text style={[styles.statVal, { color: colors.text }]}>{item.title}</Text>
+                                <Text style={[styles.statSubVal, { color: colors.textSecondary }]}>{item.subtitle}</Text>
                             </TouchableOpacity>
                         ))}
-                    </View>
+                    </ScrollView>
 
-                    {/* My Enrolled Courses Section */}
                     <View style={styles.sectionHeader}>
-                        <Text style={[styles.sectionTitle, { color: colors.text }]}>My Continuing Courses</Text>
-                        <Text style={[styles.courseCount, { color: colors.textSecondary }]}>{myCourses.length} Enrolled</Text>
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                            {isOffline ? 'OFFLINE' : 'ACTIVE'} <Text style={{ color: '#00AEEF' }}>{isOffline ? 'VIDEOS' : 'COURSES'}</Text>
+                        </Text>
+                        <Text style={[styles.courseCount, { color: colors.textSecondary }]}>
+                            {isOffline ? offlineVideos.length : myCourses.length} {isOffline ? 'SAVED' : 'STREAMS'}
+                        </Text>
                     </View>
 
-                    {myCourses.length > 0 ? (
-                        myCourses.map(course => renderCourseCard(course))
+                    {isOffline ? (
+                        offlineVideos.length > 0 ? (
+                            offlineVideos.map(video => (
+                                <TouchableOpacity
+                                    key={video.id}
+                                    style={[styles.courseCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                    onPress={() => router.push(`/student/courses/${video.courseId}`)}
+                                >
+                                    <View style={[styles.courseImageWrapper, { backgroundColor: 'rgba(0, 174, 239, 0.05)' }]}>
+                                        <Ionicons name="play-circle" size={30} color="#00AEEF" />
+                                    </View>
+                                    <View style={styles.courseDetails}>
+                                        <View style={[styles.categoryBadge, { backgroundColor: 'rgba(16, 185, 129, 0.1)' }]}>
+                                            <Text style={[styles.categoryText, { color: '#10B981' }]}>READY OFFLINE</Text>
+                                        </View>
+                                        <Text style={[styles.courseTitleText, { color: colors.text }]}>{video.title}</Text>
+                                        <Text style={[styles.instructorName, { color: colors.textSecondary }]}>{video.courseTitle || 'DOWNLOADED'}</Text>
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                                </TouchableOpacity>
+                            ))
+                        ) : (
+                            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <Ionicons name="cloud-offline-outline" size={40} color={colors.textSecondary} />
+                                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>YOU ARE OFFLINE AND HAVE NO SAVED VIDEOS.</Text>
+                            </View>
+                        )
                     ) : (
-                        <View style={[styles.emptyEnrollmentCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <Ionicons name="school-outline" size={48} color={colors.textSecondary} />
-                            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>You haven't enrolled in any courses yet.</Text>
-                            <TouchableOpacity style={styles.exploreBtn} onPress={() => router.push('/student/explore')}>
-                                <Text style={styles.exploreBtnText}>Discover Courses</Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
-
-                    {/* Continue Watching / Recent Video Section */}
-                    {recentVideo && (
-                        <View style={styles.recentSection}>
-                            <View style={styles.sectionHeader}>
-                                <Text style={[styles.sectionTitle, { color: colors.text }]}>Continue Watching</Text>
-                                <TouchableOpacity onPress={async () => {
-                                    await AsyncStorage.removeItem('recent_video');
-                                    setRecentVideo(null);
-                                }}>
-                                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>Clear</Text>
+                        myCourses.length > 0 ? (
+                            myCourses.map(course => renderCourseCard(course))
+                        ) : (
+                            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <Ionicons name="school-outline" size={40} color={colors.textSecondary} />
+                                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Loading your courses...</Text>
+                                <TouchableOpacity style={styles.exploreBtn} onPress={() => router.push('/student/explore')}>
+                                    <Text style={styles.exploreBtnText}>BROWSE COURSES</Text>
                                 </TouchableOpacity>
                             </View>
-                            <TouchableOpacity
-                                style={[styles.recentCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                                onPress={() => router.push(`/student/courses/${recentVideo.courseId}`)}
-                            >
-                                <View style={styles.recentImageContainer}>
-                                    {recentVideo.thumbnail ? (
-                                        <Image source={{ uri: recentVideo.thumbnail }} style={styles.recentThumbnail} />
-                                    ) : (
-                                        <View style={[styles.recentThumbPlaceholder, { backgroundColor: colors.primary + '20' }]}>
-                                            <Ionicons name="play" size={24} color={Colors.primary} />
-                                        </View>
-                                    )}
-                                    <View style={styles.playOverlay}>
-                                        <Ionicons name="play" size={16} color="#FFF" />
-                                    </View>
-                                </View>
-                                <View style={styles.recentContent}>
-                                    <Text style={[styles.recentCourseTitle, { color: colors.textSecondary }]} numberOfLines={1}>
-                                        {recentVideo.courseTitle}
-                                    </Text>
-                                    <Text style={[styles.recentVideoTitle, { color: colors.text }]} numberOfLines={1}>
-                                        {recentVideo.title}
-                                    </Text>
-                                    <View style={styles.progressBarContainer}>
-                                        <View style={[styles.progressBar, { backgroundColor: Colors.primary }]} />
-                                    </View>
-                                </View>
-                                <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                            </TouchableOpacity>
-                        </View>
+                        )
                     )}
                 </ScrollView>
             )}
-        </SafeAreaView>
+        </View>
     );
 }
 
@@ -231,225 +294,230 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     scrollContent: {
-        padding: 20,
-        paddingBottom: 40,
+        paddingHorizontal: 32,
+        paddingTop: 10,
+        paddingBottom: 100,
     },
-    welcomeBox: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 25,
+    headerTitleContainer: {
+        marginBottom: 40,
     },
-    welcomeTitle: {
+    welcomeSubSmall: {
+        fontSize: 10,
+        fontWeight: '900',
+        color: '#00AEEF',
+        letterSpacing: 2,
+    },
+    mainTagline: {
         fontSize: 26,
-        fontWeight: 'bold',
+        fontWeight: '900',
+        marginTop: 15,
+        letterSpacing: -0.5,
+        lineHeight: 34,
+        fontFamily: Platform.OS === 'ios' ? 'Space Grotesk' : 'SpaceGrotesk-Bold',
     },
-    welcomeSub: {
-        fontSize: 14,
-        marginTop: 2,
-    },
-    subBadge: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-    },
-    statsRow: {
+    searchRow: {
         flexDirection: 'row',
         gap: 12,
-        marginBottom: 30,
+        marginBottom: 40,
     },
-    statCard: {
+    searchBar: {
         flex: 1,
-        borderRadius: 20,
-        padding: 15,
+        flexDirection: 'row',
         alignItems: 'center',
-        gap: 10,
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        height: 54,
         borderWidth: 1,
     },
-    statIcon: {
-        width: 44,
-        height: 44,
-        borderRadius: 14,
+    searchText: {
+        marginLeft: 12,
+        fontSize: 13,
+        fontWeight: '600',
+        letterSpacing: 0.5,
+    },
+    filterBtn: {
+        width: 54,
+        height: 54,
+        borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
-    },
-    statVal: {
-        fontSize: 12,
-        fontWeight: 'bold',
+        borderWidth: 1,
     },
     sectionHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 15,
+        alignItems: 'flex-end',
+        marginBottom: 20,
     },
     sectionTitle: {
-        fontSize: 19,
-        fontWeight: '800',
+        fontSize: 14,
+        fontWeight: '900',
+        letterSpacing: 2,
+        fontFamily: Platform.OS === 'ios' ? 'Space Grotesk' : 'SpaceGrotesk-Bold',
     },
     courseCount: {
+        fontSize: 9,
+        fontWeight: '900',
+        letterSpacing: 1,
+    },
+    statsRow: {
+        gap: 16,
+        marginBottom: 40,
+    },
+    statCard: {
+        width: 140,
+        padding: 24,
+        borderRadius: 24,
+        borderWidth: 1,
+        alignItems: 'flex-start',
+    },
+    statIcon: {
+        width: 36,
+        height: 36,
+        backgroundColor: 'rgba(0, 174, 239, 0.1)',
+        borderRadius: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    statVal: {
         fontSize: 12,
-        fontWeight: '600',
+        fontWeight: '900',
+        letterSpacing: 1,
+    },
+    statSubVal: {
+        fontSize: 9,
+        marginTop: 4,
+        fontWeight: '700',
+        letterSpacing: 0.5,
+    },
+    bannerWrapper: {
+        marginBottom: 45,
+        height: 200,
+        marginHorizontal: -32,
+    },
+    bannerBackground: {
+        flex: 1,
+        width: '100%',
+        height: '100%',
+    },
+    bannerOverlay: {
+        flex: 1,
+        borderRadius: 24,
+        padding: 32,
+        justifyContent: 'center',
+    },
+    bannerContent: {
+        maxWidth: '75%',
+    },
+    bannerMainText: {
+        fontSize: 22,
+        fontWeight: '900',
+        letterSpacing: 1.5,
+        lineHeight: 28,
+        fontFamily: Platform.OS === 'ios' ? 'Space Grotesk' : 'SpaceGrotesk-Bold',
+    },
+    exploreBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#00AEEF',
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 8,
+        alignSelf: 'flex-start',
+        marginTop: 20,
+        gap: 8,
+    },
+    exploreBadgeText: {
+        fontSize: 10,
+        fontWeight: '900',
+        color: '#000',
+        letterSpacing: 1,
     },
     courseCard: {
         flexDirection: 'row',
         borderRadius: 24,
-        padding: 14,
+        padding: 16,
         marginBottom: 16,
         borderWidth: 1,
-        elevation: 3,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.05,
-        shadowRadius: 10,
+        alignItems: 'center',
     },
-    courseImagePlaceholder: {
-        width: 85,
-        height: 85,
-        borderRadius: 18,
+    courseImageWrapper: {
+        width: 80,
+        height: 80,
+        borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 15,
+        overflow: 'hidden',
     },
     thumbnailImg: {
         width: '100%',
         height: '100%',
-        borderRadius: 18,
     },
     courseDetails: {
         flex: 1,
-        justifyContent: 'center',
+        marginLeft: 20,
     },
-    categoryTag: {
-        backgroundColor: '#F0FDF4',
-        paddingHorizontal: 8,
-        paddingVertical: 3,
-        borderRadius: 6,
+    categoryBadge: {
         alignSelf: 'flex-start',
-        marginBottom: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 4,
+        marginBottom: 8,
     },
     categoryText: {
-        fontSize: 10,
-        fontWeight: 'bold',
-        color: '#16A34A',
+        fontSize: 8,
+        color: '#00AEEF',
+        fontWeight: '900',
+        letterSpacing: 0.5,
     },
     courseTitleText: {
         fontSize: 16,
         fontWeight: 'bold',
-        marginBottom: 2,
+        marginBottom: 4,
     },
     instructorName: {
-        fontSize: 12,
-        marginBottom: 6,
+        fontSize: 9,
+        fontWeight: '700',
+        letterSpacing: 0.5,
+        marginBottom: 10,
     },
-    purchaseBadge: {
+    enrolledStatus: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 5,
+        gap: 6,
     },
-    purchaseText: {
-        fontSize: 11,
-        fontWeight: 'bold',
-        color: '#16A34A',
+    enrolledText: {
+        fontSize: 9,
+        fontWeight: '900',
+        color: '#00AEEF',
+        letterSpacing: 1,
     },
-    emptyEnrollmentCard: {
-        padding: 40,
+    emptyCard: {
+        width: '100%',
+        paddingVertical: 60,
         borderRadius: 24,
+        borderWidth: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: 1,
-        borderStyle: 'dashed',
     },
     emptyText: {
-        fontSize: 14,
-        marginTop: 15,
-        textAlign: 'center',
-        marginBottom: 20,
+        marginTop: 20,
+        fontSize: 11,
+        fontWeight: '900',
+        letterSpacing: 1,
     },
     exploreBtn: {
-        backgroundColor: Colors.primary,
+        marginTop: 30,
+        backgroundColor: '#00AEEF',
         paddingHorizontal: 25,
-        paddingVertical: 12,
-        borderRadius: 14,
+        paddingVertical: 14,
+        borderRadius: 8,
     },
     exploreBtnText: {
-        color: Colors.secondary,
-        fontWeight: 'bold',
-        fontSize: 14,
-    },
-    // Recent Video Styles
-    recentSection: {
-        marginBottom: 30,
-    },
-    recentCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 12,
-        borderRadius: 20,
-        borderWidth: 1,
-        elevation: 4,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 10,
-    },
-    recentImageContainer: {
-        position: 'relative',
-        width: 100,
-        height: 65,
-        borderRadius: 12,
-        overflow: 'hidden',
-        marginRight: 15,
-    },
-    recentThumbnail: {
-        width: '100%',
-        height: '100%',
-    },
-    recentThumbPlaceholder: {
-        width: '100%',
-        height: '100%',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    playOverlay: {
-        position: 'absolute',
-        bottom: 5,
-        right: 5,
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    recentContent: {
-        flex: 1,
-        justifyContent: 'center',
-    },
-    recentCourseTitle: {
+        color: '#000',
+        fontWeight: '900',
         fontSize: 11,
-        fontWeight: '700',
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
-        marginBottom: 2,
-    },
-    recentVideoTitle: {
-        fontSize: 15,
-        fontWeight: 'bold',
-        marginBottom: 8,
-    },
-    progressBarContainer: {
-        height: 3,
-        backgroundColor: 'rgba(0,0,0,0.05)',
-        borderRadius: 2,
-        width: '100%',
-        overflow: 'hidden',
-    },
-    progressBar: {
-        height: '100%',
-        width: '70%', // Simulated progress
-    },
+        letterSpacing: 1,
+    }
 });

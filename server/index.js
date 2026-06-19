@@ -17,6 +17,8 @@ const liveRoutes = require('./routes/live');
 const socialRoutes = require('./routes/social');
 const paymentRoutes = require('./routes/payment');
 const assignmentRoutes = require('./routes/assignments');
+const supportRoutes = require('./routes/support');
+const chatRoutes = require('./routes/chat');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/courses', courseRoutes);
@@ -25,6 +27,8 @@ app.use('/api/live', liveRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/assignments', assignmentRoutes);
+app.use('/api/help-live-support', supportRoutes);
+app.use('/api/chat', chatRoutes);
 
 app.get('/', (req, res) => {
     res.send('Learnova Secure Backend is running 🚀');
@@ -42,6 +46,10 @@ app.use((err, req, res, next) => {
 if (process.env.VERCEL !== '1') {
     app.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
+
+        // Initialize automated cron services
+        const { initCronJobs } = require('./services/cronService');
+        initCronJobs();
     });
 }
 

@@ -41,11 +41,26 @@ router.post('/signup', upload.fields([
 
     // For non-multipart requests, req.body might still be JSON
     // For multipart, text fields are in req.body
-    const { email, password, fullName, role, ...extraInfo } = req.body;
+    const { email, password, fullName, role, username, ...extraInfo } = req.body;
 
     try {
-        // Validation: Password length
-        if (password.length < 6) {
+        if (!username) {
+            return res.status(400).json({ success: false, message: 'Username is required' });
+        }
+
+        const usernameRegex = /^[a-z0-9_]+$/;
+        if (!usernameRegex.test(username)) {
+            return res.status(400).json({ success: false, message: 'Username must be lowercase alphanumeric and without spaces' });
+        }
+
+        // Check if username is already taken
+        const usernameSnap = await get(child(ref(rtdb), `usernames/${username}`));
+        if (usernameSnap.exists()) {
+            return res.status(400).json({ success: false, message: 'Username is already taken' });
+        }
+
+        // Validation: Password length (Only for manual email/password)
+        if (!req.body.isGoogleAuth && (!password || password.length < 6)) {
             return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long' });
         }
 
@@ -78,6 +93,7 @@ router.post('/signup', upload.fields([
             fullName,
             email,
             role: role || 'student',
+            username,
             status: (role === 'teacher' || role === 'school') ? 'pending' : 'active',
             uid: user.uid,
             createdAt: Date.now(),
@@ -87,6 +103,9 @@ router.post('/signup', upload.fields([
         };
 
         await set(ref(rtdb, 'users/' + user.uid), userData);
+
+        // Register the username globally
+        await set(ref(rtdb, `usernames/${username}`), user.uid);
 
         res.status(201).json({
             success: true,
@@ -102,18 +121,28 @@ router.post('/signup', upload.fields([
     }
 });
 
-// Login
 router.post('/login', async (req, res) => {
-    const { email, password, role } = req.body; // Client sends selected role
-    console.log(`Login Attempt: ${email} as ${role}`);
+    const { email, password, role, uid, isGoogleAuth } = req.body;
+    console.log(`Login Attempt: ${email} (Google: ${isGoogleAuth})`);
 
     try {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        const user = userCredential.user;
+        let userUid = null;
+
+        if (isGoogleAuth && uid) {
+            // Case 1: Google Login - User already authenticated on frontend
+            userUid = uid;
+        } else {
+            // Case 2: Manual Login - Authenticate with Firebase Auth
+            if (!password) {
+                return res.status(400).json({ success: false, message: 'Password is required' });
+            }
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            userUid = userCredential.user.uid;
+        }
 
         // Get user profile from Realtime Database
         const dbRef = ref(rtdb);
-        const snapshot = await get(child(dbRef, `users/${user.uid}`));
+        const snapshot = await get(child(dbRef, `users/${userUid}`));
 
         if (!snapshot.exists()) {
             return res.status(404).json({ success: false, message: 'User record not found' });
@@ -121,8 +150,8 @@ router.post('/login', async (req, res) => {
 
         const userData = snapshot.val();
 
-        // 1. Check Role Mismatch
-        if (userData.role !== role) {
+        // 1. Check Role Mismatch (If role was provided on frontend)
+        if (role && userData.role !== role) {
             return res.status(403).json({
                 success: false,
                 message: `This account is a ${userData.role}. Please select the correct role.`
@@ -134,6 +163,7 @@ router.post('/login', async (req, res) => {
             user: userData
         });
     } catch (err) {
+        console.error('Login Error:', err);
         res.status(401).json({
             success: false,
             message: 'Invalid credentials or login error',

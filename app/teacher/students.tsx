@@ -1,16 +1,18 @@
+import NoInternet from '@/components/NoInternet';
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { courseApi } from '@/constants/api';
-import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
-    SafeAreaView,
+    Platform,
     StatusBar,
     StyleSheet,
     Text,
@@ -32,11 +34,16 @@ export default function TeacherStudents() {
     const router = useRouter();
     const [studentList, setStudentList] = useState<Student[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isOffline, setIsOffline] = useState(false);
 
-    const randomColors = ['#FFD700', '#FF6347', '#4682B4', '#32CD32', '#9B51E0', '#F2994A', '#EB5757'];
+    const randomColors = ['#00AEEF', '#0072FF', '#00C6FF', '#00E5FF'];
 
     useEffect(() => {
+        const unsubscribe = NetInfo.addEventListener(state => {
+            setIsOffline(!state.isConnected);
+        });
         loadStudents();
+        return () => unsubscribe();
     }, []);
 
     const loadStudents = async () => {
@@ -50,8 +57,8 @@ export default function TeacherStudents() {
                 const fetchedStudents = response.data.students.map((s: any, index: number) => ({
                     id: s.id,
                     name: s.name,
-                    level: s.courseTitle || 'Enrolled Student',
-                    progress: 'Active',
+                    level: s.courseTitle || 'ENROLLED STUDENT',
+                    progress: 'ACTIVE',
                     image: randomColors[index % randomColors.length]
                 }));
                 setStudentList(fetchedStudents);
@@ -63,96 +70,104 @@ export default function TeacherStudents() {
         }
     };
 
-
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+
+            {isDark && (
+                <LinearGradient
+                    colors={['#000000', '#001A2A', '#000000']}
+                    style={StyleSheet.absoluteFill}
+                />
+            )}
+
             <AppSidebar role="teacher" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader
-                title="Students"
+                title="MALTOVERSE"
                 toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
                 showLive={true}
                 onLivePress={() => router.push('/teacher/live')}
             />
 
             <View style={styles.screenContainer}>
-                <View style={styles.screenHeader}>
-                    <View style={styles.titleRow}>
-                        <View>
-                            <Text style={[styles.screenTitle, { color: colors.text }]}>My Students</Text>
-                            <Text style={[styles.screenSub, { color: colors.textSecondary }]}>Manage your active students</Text>
-                        </View>
-                    </View>
+                <View style={styles.headerTitleContainer}>
+                    <Text style={styles.welcomeSubSmall}>• ENROLLED STUDENTS</Text>
+                    <Text style={[styles.mainTagline, { color: colors.text }]}>
+                        Student <Text style={{ color: '#00AEEF' }}>List</Text>
+                    </Text>
                 </View>
 
-                {isLoading ? (
-                    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                        <ActivityIndicator size="large" color={Colors.primary} />
-                        <Text style={{ marginTop: 10, color: colors.textSecondary }}>Fetching your students...</Text>
-                    </View>
+                {isOffline ? (
+                    <NoInternet />
                 ) : (
-                    <FlatList
-                        data={studentList}
-                        keyExtractor={(item) => item.id}
-                        ListEmptyComponent={
-                            <View style={styles.emptyContainer}>
-                                <Ionicons name="people-outline" size={60} color={colors.textSecondary} />
-                                <Text style={[styles.emptyText, { color: colors.text }]}>No students found yet.</Text>
-                                <Text style={[styles.emptySub, { color: colors.textSecondary }]}>Students will appear here once they enroll in your courses.</Text>
-                                <TouchableOpacity style={styles.refreshBtn} onPress={loadStudents}>
-                                    <Text style={styles.refreshBtnText}>Check Again</Text>
-                                </TouchableOpacity>
-                            </View>
-                        }
-                        renderItem={({ item }) => (
-                            <View style={[styles.listItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                                <View style={[styles.avatarCircle, { backgroundColor: item.image }]}>
-                                    <Text style={styles.avatarInitial}>{item.name ? item.name.charAt(0) : 'S'}</Text>
+                    isLoading ? (
+                        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                            <ActivityIndicator size="large" color="#00AEEF" />
+                            <Text style={{ marginTop: 15, color: colors.textSecondary, fontSize: 10, fontWeight: '900', letterSpacing: 1 }}>LOADING DATA...</Text>
+                        </View>
+                    ) : (
+                        <FlatList
+                            data={studentList}
+                            keyExtractor={(item) => item.id}
+                            ListEmptyComponent={
+                                <View style={styles.emptyContainer}>
+                                    <Ionicons name="people-outline" size={50} color={colors.textSecondary} />
+                                    <Text style={[styles.emptyText, { color: colors.text }]}>NO STUDENTS FOUND.</Text>
+                                    <Text style={[styles.emptySub, { color: colors.textSecondary }]}>Students will appear here after enrollment.</Text>
+                                    <TouchableOpacity style={styles.refreshBtn} onPress={loadStudents}>
+                                        <Text style={styles.refreshBtnText}>RETRY</Text>
+                                    </TouchableOpacity>
                                 </View>
-                                <View style={styles.listText}>
-                                    <Text style={[styles.itemName, { color: colors.text }]}>{item.name}</Text>
-                                    <Text style={[styles.itemSub, { color: colors.textSecondary }]}>{item.level}</Text>
+                            }
+                            renderItem={({ item }) => (
+                                <View style={[styles.listItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                    <View style={[styles.avatarCircle, { backgroundColor: 'rgba(0, 174, 239, 0.1)', borderColor: '#00AEEF', borderWidth: 1 }]}>
+                                        <Text style={[styles.avatarInitial, { color: '#00AEEF' }]}>{item.name ? item.name.charAt(0).toUpperCase() : 'S'}</Text>
+                                    </View>
+                                    <View style={styles.listText}>
+                                        <Text style={[styles.itemName, { color: colors.text }]}>{item.name.toUpperCase()}</Text>
+                                        <Text style={[styles.itemSub, { color: colors.textSecondary }]}>{item.level.toUpperCase()}</Text>
+                                    </View>
+                                    <View style={styles.progressBox}>
+                                        <View style={styles.pulse} />
+                                        <Text style={styles.progressText}>{item.progress}</Text>
+                                    </View>
                                 </View>
-                                <View style={styles.progressBox}>
-                                    <Text style={styles.progressText}>{item.progress}</Text>
-                                </View>
-                            </View>
-                        )}
-                        contentContainerStyle={[styles.listContent, studentList.length === 0 && { flex: 1 }]}
-                        showsVerticalScrollIndicator={false}
-                    />
+                            )}
+                            contentContainerStyle={[styles.listContent, studentList.length === 0 && { flex: 1 }]}
+                            showsVerticalScrollIndicator={false}
+                        />
+                    )
                 )}
             </View>
-        </SafeAreaView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F3F4F6',
     },
     screenContainer: {
         flex: 1,
-        padding: 20,
+        paddingHorizontal: 32,
     },
-    screenHeader: {
-        marginBottom: 20,
+    headerTitleContainer: {
+        marginTop: 10,
+        marginBottom: 30,
     },
-    titleRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+    welcomeSubSmall: {
+        fontSize: 10,
+        fontWeight: '900',
+        color: '#00AEEF',
+        letterSpacing: 2,
     },
-    screenTitle: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: Colors.secondary,
-    },
-    screenSub: {
-        fontSize: 14,
-        color: Colors.grey,
-        marginTop: 4,
+    mainTagline: {
+        fontSize: 26,
+        fontWeight: '900',
+        marginTop: 15,
+        letterSpacing: -0.5,
+        fontFamily: Platform.OS === 'ios' ? 'Space Grotesk' : 'SpaceGrotesk-Bold',
     },
     listContent: {
         paddingBottom: 40,
@@ -160,41 +175,35 @@ const styles = StyleSheet.create({
     listItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.white,
-        padding: 15,
-        borderRadius: 16,
+        padding: 16,
+        borderRadius: 20,
         marginBottom: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 5,
-        elevation: 2,
+        borderWidth: 1,
     },
     avatarCircle: {
         width: 48,
         height: 48,
-        borderRadius: 24,
+        borderRadius: 14,
         justifyContent: 'center',
         alignItems: 'center',
     },
     avatarInitial: {
         fontSize: 18,
-        fontWeight: 'bold',
-        color: Colors.white,
+        fontWeight: '900',
     },
     listText: {
         flex: 1,
         marginLeft: 15,
     },
     itemName: {
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: 'bold',
-        color: Colors.secondary,
     },
     itemSub: {
-        fontSize: 12,
-        color: Colors.grey,
-        marginTop: 2,
+        fontSize: 9,
+        fontWeight: '700',
+        marginTop: 4,
+        letterSpacing: 0.5,
     },
     emptyContainer: {
         flex: 1,
@@ -203,36 +212,50 @@ const styles = StyleSheet.create({
         padding: 40,
     },
     emptyText: {
-        fontSize: 18,
-        fontWeight: 'bold',
+        fontSize: 14,
+        fontWeight: '900',
         marginTop: 20,
+        letterSpacing: 1,
     },
     emptySub: {
-        fontSize: 14,
+        fontSize: 10,
         textAlign: 'center',
         marginTop: 10,
-        lineHeight: 20,
+        fontWeight: '700',
+        letterSpacing: 0.5,
     },
     refreshBtn: {
         marginTop: 30,
-        backgroundColor: Colors.primary,
+        backgroundColor: '#00AEEF',
         paddingHorizontal: 25,
         paddingVertical: 12,
-        borderRadius: 25,
+        borderRadius: 8,
     },
     refreshBtnText: {
-        color: '#1A2744',
-        fontWeight: 'bold',
+        color: '#000',
+        fontWeight: '900',
+        fontSize: 11,
+        letterSpacing: 1,
     },
     progressBox: {
         paddingHorizontal: 10,
-        paddingVertical: 4,
-        backgroundColor: '#E8F5E9',
-        borderRadius: 8,
+        paddingVertical: 6,
+        backgroundColor: 'rgba(0, 174, 239, 0.1)',
+        borderRadius: 6,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    pulse: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: '#00AEEF',
     },
     progressText: {
-        fontSize: 12,
-        fontWeight: 'bold',
-        color: '#2E7D32',
+        fontSize: 8,
+        fontWeight: '900',
+        color: '#00AEEF',
+        letterSpacing: 1,
     },
 });

@@ -15,18 +15,21 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@google-cloud/storage": "^7.19.0",
     "agora-token": "^2.0.5",
+    "axios": "^1.15.2",
     "body-parser": "^2.2.2",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
+    "expo": "~54.0.33",
     "express": "^5.2.1",
     "firebase": "^12.10.0",
     "firebase-admin": "^13.7.0",
     "multer": "^2.1.1",
-    "stripe": "^20.4.1",
-    "expo": "~54.0.33",
+    "node-cron": "^4.2.1",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "stripe": "^20.4.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

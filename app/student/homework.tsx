@@ -1,11 +1,12 @@
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
 import { assignmentApi } from '@/constants/api';
-import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
+import { storage } from '@/lib/firebase';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -13,6 +14,7 @@ import {
     FlatList,
     Linking,
     Modal,
+    Platform,
     Pressable,
     RefreshControl,
     SafeAreaView,
@@ -31,8 +33,8 @@ export default function StudentHomework() {
     const [refreshing, setRefreshing] = useState(false);
     const [userId, setUserId] = useState('');
     const [userName, setUserName] = useState('');
+    const [homeworkLimit, setHomeworkLimit] = useState(10);
 
-    // Upload modal
     const [selectedAssignment, setSelectedAssignment] = useState<any>(null);
     const [isUploadModalVisible, setIsUploadModalVisible] = useState(false);
     const [pickedFile, setPickedFile] = useState<any>(null);
@@ -89,11 +91,19 @@ export default function StudentHomework() {
 
         setIsSubmitting(true);
         try {
+            const response = await fetch(pickedFile.uri);
+            const blob = await response.blob();
+            const fileName = `${Date.now()}-${pickedFile.name}`;
+            const fileRef = storageRef(storage, `submissions/${userId}/${fileName}`);
+
+            await uploadBytes(fileRef, blob);
+            const downloadUrl = await getDownloadURL(fileRef);
+
             const res = await assignmentApi.submit({
                 studentId: userId,
                 studentName: userName,
                 assignmentId: selectedAssignment.id,
-                submissionUrl: pickedFile.uri,
+                submissionUrl: downloadUrl,
                 submissionFileName: pickedFile.name,
             });
 
@@ -105,35 +115,38 @@ export default function StudentHomework() {
                 loadHomework();
             }
         } catch (err: any) {
-            Alert.alert('Error', err.response?.data?.message || 'Submission failed.');
+            console.error('Submission error:', err);
+            Alert.alert('Error', 'Submission failed. Please try again.');
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    const getStatusConfig = (status: string) => {
-        switch (status) {
-            case 'completed':
-                return { icon: 'checkmark-done-circle', color: '#10B981', label: 'Completed', bg: '#10B98115' };
-            case 'submitted':
-                return { icon: 'time', color: '#F59E0B', label: 'Submitted - Awaiting Review', bg: '#F59E0B15' };
-            default:
-                return { icon: 'alert-circle', color: '#EF4444', label: 'Pending', bg: '#EF444415' };
+    const getStatusConfig = (item: any) => {
+        if (item.status === 'completed') {
+            return { icon: 'checkmark-done-circle', color: '#00AEEF', label: 'COMPLETED', bg: isDark ? 'rgba(0, 174, 239, 0.1)' : 'rgba(0, 174, 239, 0.05)' };
         }
+        if (item.status === 'submitted') {
+            return { icon: 'time-outline', color: '#00AEEF', label: 'AWAITING REVIEW', bg: isDark ? 'rgba(0, 174, 239, 0.05)' : 'rgba(0, 174, 239, 0.03)' };
+        }
+        if (item.rejected) {
+            return { icon: 'alert-circle-outline', color: '#FF4444', label: 'NEEDS REVISION', bg: isDark ? 'rgba(255, 68, 68, 0.1)' : 'rgba(255, 68, 68, 0.05)' };
+        }
+        return { icon: 'radio-button-on-outline', color: colors.textSecondary, label: 'PENDING', bg: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)' };
     };
 
     const renderItem = ({ item }: any) => {
-        const st = getStatusConfig(item.status);
+        const st = getStatusConfig(item);
         return (
             <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <View style={styles.cardTop}>
                     <View style={[styles.iconCircle, { backgroundColor: st.bg }]}>
-                        <Ionicons name={st.icon as any} size={24} color={st.color} />
+                        <Ionicons name={st.icon as any} size={22} color={st.color} />
                     </View>
                     <View style={{ flex: 1 }}>
                         <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
                         <Text style={[styles.cardSub, { color: colors.textSecondary }]}>
-                            {item.courseTitle} • by {item.teacherName}
+                            {item.courseTitle.toUpperCase()} • BY {item.teacherName.toUpperCase()}
                         </Text>
                     </View>
                 </View>
@@ -142,24 +155,28 @@ export default function StudentHomework() {
                     <Text style={[styles.descText, { color: colors.textSecondary }]} numberOfLines={3}>{item.description}</Text>
                 ) : null}
 
-                {/* Status badge */}
                 <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
-                    <Ionicons name={st.icon as any} size={14} color={st.color} />
-                    <Text style={{ color: st.color, fontWeight: '600', fontSize: 12 }}>{st.label}</Text>
+                    <Ionicons name={st.icon as any} size={12} color={st.color} />
+                    <Text style={[styles.statusLabel, { color: st.color }]}>{st.label}</Text>
                 </View>
 
-                {/* File attached by teacher (download) */}
+                {item.rejected && item.feedback && (
+                    <View style={styles.feedbackBox}>
+                        <Text style={styles.feedbackTitle}>TEACHER FEEDBACK:</Text>
+                        <Text style={[styles.feedbackText, { color: colors.text }]}>{item.feedback}</Text>
+                    </View>
+                )}
+
                 {item.fileUrl && (
                     <TouchableOpacity
                         style={styles.downloadRow}
                         onPress={() => Linking.openURL(item.fileUrl)}
                     >
-                        <Ionicons name="document-attach" size={16} color={Colors.primary} />
-                        <Text style={{ color: Colors.primary, fontSize: 12, fontWeight: '600' }}>View Attached File</Text>
+                        <Ionicons name="document-attach-outline" size={16} color="#00AEEF" />
+                        <Text style={styles.downloadText}>STUDY MATERIAL ATTACHED</Text>
                     </TouchableOpacity>
                 )}
 
-                {/* Upload button for pending tasks */}
                 {item.status === 'pending' && (
                     <TouchableOpacity
                         style={styles.uploadBtn}
@@ -169,74 +186,82 @@ export default function StudentHomework() {
                             setIsUploadModalVisible(true);
                         }}
                     >
-                        <Ionicons name="cloud-upload" size={18} color="#FFF" />
-                        <Text style={styles.uploadBtnText}>Upload Your Work</Text>
+                        <Ionicons name="cloud-upload-outline" size={18} color="#000" />
+                        <Text style={styles.uploadBtnText}>UPLOAD YOUR WORK</Text>
                     </TouchableOpacity>
                 )}
 
-                <Text style={[styles.dateText, { color: colors.textSecondary }]}>
-                    Assigned: {new Date(item.assignedAt).toLocaleDateString()}
-                </Text>
+                <View style={[styles.cardFooter, { borderTopColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)' }]}>
+                    <Text style={styles.dateText}>
+                        ASSIGNED: {new Date(item.assignedAt).toLocaleDateString()}
+                    </Text>
+                </View>
             </View>
         );
     };
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+            <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
             <AppSidebar role="student" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
-            <AppHeader title="My Homework" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} role="student" />
+            <AppHeader title="HOMEWORK TERMINAL" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} role="student" />
 
             <View style={styles.screenContent}>
                 <FlatList
-                    data={assignments}
+                    data={assignments.slice(0, homeworkLimit)}
                     keyExtractor={(item) => item.id}
                     renderItem={renderItem}
-                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} tintColor={Colors.primary} />}
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#00AEEF']} tintColor="#00AEEF" />}
                     ListEmptyComponent={
-                        isLoading ? <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 50 }} /> :
+                        isLoading ? <View style={{ marginTop: 100 }}><ActivityIndicator size="large" color="#00AEEF" /></View> :
                             <View style={styles.emptyState}>
-                                <Ionicons name="happy-outline" size={60} color={colors.textSecondary} style={{ opacity: 0.3 }} />
-                                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No homework assigned yet!</Text>
-                                <Text style={{ color: colors.textSecondary, fontSize: 13 }}>Enjoy your free time 🎉</Text>
+                                <Ionicons name="sparkles-outline" size={60} color={isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.05)"} />
+                                <Text style={[styles.emptyText, { color: colors.text }]}>ALL HOMEWORK COMPLETED</Text>
+                                <Text style={[styles.emptySub, { color: colors.textSecondary }]}>No pending assignments detected in the terminal.</Text>
                             </View>
                     }
-                    contentContainerStyle={{ paddingBottom: 100 }}
+                    contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 32 }}
+                    ListFooterComponent={
+                        assignments.length > homeworkLimit ? (
+                            <TouchableOpacity style={{ padding: 20, alignItems: 'center' }} onPress={() => setHomeworkLimit(prev => prev + 10)}>
+                                <Text style={{ color: '#00AEEF', fontWeight: 'bold', letterSpacing: 1 }}>LOAD MORE</Text>
+                            </TouchableOpacity>
+                        ) : null
+                    }
                 />
             </View>
 
-            {/* Upload Submission Modal */}
             <Modal visible={isUploadModalVisible} animationType="fade" transparent>
                 <View style={styles.modalOverlay}>
                     <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsUploadModalVisible(false)}>
-                        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} />
+                        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)' }} />
                     </Pressable>
-                    <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+                    <View style={[styles.modalContent, { backgroundColor: isDark ? '#0A0A0A' : '#FFF', borderColor: colors.border }]}>
                         <View style={styles.modalHeader}>
-                            <Text style={[styles.modalTitle, { color: colors.text }]}>Submit Assignment</Text>
+                            <Text style={[styles.modalTitle, { color: colors.text }]}>DATA UPLOAD</Text>
                             <TouchableOpacity onPress={() => setIsUploadModalVisible(false)}>
-                                <Ionicons name="close" size={22} color={colors.text} />
+                                <Ionicons name="close" size={24} color={colors.text} />
                             </TouchableOpacity>
                         </View>
 
                         {selectedAssignment && (
-                            <View style={{ marginBottom: 20 }}>
+                            <View style={{ marginBottom: 25 }}>
                                 <Text style={[styles.cardTitle, { color: colors.text }]}>{selectedAssignment.title}</Text>
-                                <Text style={[styles.cardSub, { color: colors.textSecondary, marginTop: 4 }]}>{selectedAssignment.courseTitle}</Text>
+                                <Text style={[styles.cardSub, { color: colors.textSecondary }]}>{selectedAssignment.courseTitle}</Text>
                             </View>
                         )}
 
                         <TouchableOpacity
-                            style={[styles.filePickerBox, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                            style={[styles.filePickerBox, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.01)' : 'rgba(0, 0, 0, 0.01)', borderColor: isDark ? 'rgba(0, 174, 239, 0.3)' : 'rgba(0, 174, 239, 0.2)' }]}
                             onPress={pickFile}
                         >
-                            <Ionicons name={pickedFile ? 'document' : 'cloud-upload-outline'} size={40} color={Colors.primary} />
-                            <Text style={{ color: pickedFile ? colors.text : colors.textSecondary, textAlign: 'center', marginTop: 8, fontSize: 14 }}>
-                                {pickedFile ? pickedFile.name : 'Tap to select your file\n(PDF, Image, Doc)'}
+                            <Ionicons name={pickedFile ? 'document-text-outline' : 'cloud-upload-outline'} size={40} color="#00AEEF" />
+                            <Text style={[styles.pickerHint, { color: colors.textSecondary }]}>
+                                {pickedFile ? pickedFile.name : 'TAP TO SELECT YOUR FILE\n(PDF, IMAGE, DOC)'}
                             </Text>
                             {pickedFile && (
-                                <TouchableOpacity onPress={() => setPickedFile(null)} style={{ marginTop: 5 }}>
-                                    <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: '600' }}>Remove</Text>
+                                <TouchableOpacity onPress={() => setPickedFile(null)} style={{ marginTop: 15 }}>
+                                    <Text style={{ color: '#FF4444', fontSize: 10, fontWeight: '900', letterSpacing: 1 }}>REMOVE</Text>
                                 </TouchableOpacity>
                             )}
                         </TouchableOpacity>
@@ -247,9 +272,9 @@ export default function StudentHomework() {
                             disabled={isSubmitting}
                         >
                             {isSubmitting ? (
-                                <ActivityIndicator color="#FFF" />
+                                <ActivityIndicator color="#000" />
                             ) : (
-                                <Text style={styles.submitBtnText}>Submit</Text>
+                                <Text style={styles.submitBtnText}>SUBMIT HOMEWORK</Text>
                             )}
                         </TouchableOpacity>
                     </View>
@@ -260,78 +285,186 @@ export default function StudentHomework() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-    screenContent: { flex: 1, paddingHorizontal: 20, paddingTop: 15 },
+    container: {
+        flex: 1,
+    },
+    screenContent: {
+        flex: 1,
+        paddingTop: 20,
+    },
     card: {
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 14,
+        borderRadius: 24,
+        padding: 24,
+        marginBottom: 20,
         borderWidth: 1,
     },
     cardTop: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        gap: 15,
     },
     iconCircle: {
-        width: 48,
-        height: 48,
-        borderRadius: 14,
+        width: 44,
+        height: 44,
+        borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
     },
-    cardTitle: { fontSize: 16, fontWeight: 'bold' },
-    cardSub: { fontSize: 12, marginTop: 2 },
-    descText: { fontSize: 13, marginTop: 12, lineHeight: 19 },
+    cardTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        fontFamily: Platform.OS === 'ios' ? 'Space Grotesk' : 'SpaceGrotesk-Bold',
+    },
+    cardSub: {
+        fontSize: 9,
+        marginTop: 4,
+        fontWeight: '900',
+        letterSpacing: 1,
+    },
+    descText: {
+        fontSize: 12,
+        marginTop: 15,
+        lineHeight: 20,
+        fontWeight: '500',
+    },
     statusBadge: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        paddingHorizontal: 10,
-        paddingVertical: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
         borderRadius: 8,
         alignSelf: 'flex-start',
-        marginTop: 12,
+        marginTop: 20,
+    },
+    statusLabel: {
+        fontWeight: '900',
+        fontSize: 8,
+        letterSpacing: 1,
     },
     downloadRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
-        marginTop: 10,
+        gap: 8,
+        marginTop: 20,
+    },
+    downloadText: {
+        color: '#00AEEF',
+        fontSize: 9,
+        fontWeight: '900',
+        letterSpacing: 1,
     },
     uploadBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 8,
-        backgroundColor: Colors.primary,
-        paddingVertical: 12,
-        borderRadius: 12,
-        marginTop: 14,
+        gap: 10,
+        backgroundColor: '#00AEEF',
+        paddingVertical: 14,
+        borderRadius: 10,
+        marginTop: 24,
     },
-    uploadBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 14 },
-    dateText: { fontSize: 11, marginTop: 10 },
-    emptyState: { alignItems: 'center', marginTop: 80, gap: 8 },
-    emptyText: { fontSize: 16 },
-
-    // Modal
-    modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    modalContent: { width: '85%', maxWidth: 400, borderRadius: 24, padding: 24, elevation: 10 },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    modalTitle: { fontSize: 18, fontWeight: 'bold' },
-    filePickerBox: {
-        borderWidth: 2,
-        borderStyle: 'dashed',
-        borderRadius: 16,
-        paddingVertical: 35,
+    uploadBtnText: {
+        color: '#000',
+        fontWeight: '900',
+        fontSize: 11,
+        letterSpacing: 1,
+    },
+    cardFooter: {
+        marginTop: 20,
+        paddingTop: 20,
+        borderTopWidth: 1,
+    },
+    dateText: {
+        fontSize: 9,
+        color: 'rgba(128, 128, 128, 0.4)',
+        fontWeight: '900',
+        letterSpacing: 1,
+    },
+    emptyState: {
         alignItems: 'center',
-        marginBottom: 20,
+        marginTop: 100,
+        gap: 20,
+    },
+    emptyText: {
+        fontSize: 14,
+        fontWeight: '900',
+        letterSpacing: 2,
+    },
+    emptySub: {
+        fontSize: 10,
+        textAlign: 'center',
+        fontWeight: '600',
+        letterSpacing: 0.5,
+    },
+    feedbackBox: {
+        marginTop: 20,
+        padding: 20,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 68, 68, 0.2)',
+        backgroundColor: 'rgba(255, 68, 68, 0.05)',
+    },
+    feedbackTitle: {
+        fontSize: 9,
+        fontWeight: '900',
+        color: '#FF4444',
+        marginBottom: 8,
+        letterSpacing: 1,
+    },
+    feedbackText: {
+        fontSize: 12,
+        lineHeight: 20,
+        fontWeight: '500',
+    },
+    modalOverlay: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalContent: {
+        width: '90%',
+        borderRadius: 24,
+        padding: 32,
+        borderWidth: 1,
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 30,
+    },
+    modalTitle: {
+        fontSize: 14,
+        fontWeight: '900',
+        letterSpacing: 2,
+    },
+    filePickerBox: {
+        borderWidth: 1,
+        borderStyle: 'dashed',
+        borderRadius: 20,
+        paddingVertical: 45,
+        alignItems: 'center',
+        marginBottom: 30,
+    },
+    pickerHint: {
+        textAlign: 'center',
+        marginTop: 15,
+        fontSize: 10,
+        fontWeight: '900',
+        letterSpacing: 1,
+        lineHeight: 18,
     },
     submitBtn: {
-        backgroundColor: Colors.primary,
-        padding: 16,
-        borderRadius: 14,
+        backgroundColor: '#00AEEF',
+        padding: 18,
+        borderRadius: 10,
         alignItems: 'center',
     },
-    submitBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 16 },
+    submitBtnText: {
+        color: '#000',
+        fontWeight: '900',
+        fontSize: 11,
+        letterSpacing: 1,
+    },
 });
