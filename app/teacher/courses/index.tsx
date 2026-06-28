@@ -5,6 +5,8 @@ import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { storage } from '@/lib/firebase';
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
@@ -130,6 +132,17 @@ export default function TeacherCourseList() {
             const userData = await AsyncStorage.getItem('user');
             if (userData) {
                 const user = JSON.parse(userData);
+
+                let finalThumbnail = thumbnail;
+                if (thumbnail && thumbnail.startsWith('file://')) {
+                    const response = await fetch(thumbnail);
+                    const blob = await response.blob();
+                    const fileName = `course_thumb_${Date.now()}.jpg`;
+                    const fileRef = storageRef(storage, `courses/${user.uid}/${fileName}`);
+                    await uploadBytes(fileRef, blob);
+                    finalThumbnail = await getDownloadURL(fileRef);
+                }
+
                 const courseData = {
                     title: newCourseTitle,
                     instructorId: user.uid,
@@ -137,7 +150,7 @@ export default function TeacherCourseList() {
                     price: newCoursePrice || '0',
                     category: newCourseCategory || 'General',
                     description: newCourseDescription.trim(),
-                    thumbnail: thumbnail,
+                    thumbnail: finalThumbnail,
                     status: 'active',
                     courseType: courseType || 'recorded'
                 };
@@ -145,14 +158,12 @@ export default function TeacherCourseList() {
                 if (editingCourse) {
                     const response = await courseApi.updateCourse(editingCourse.id, { title: newCourseTitle });
                     if (response.data.success) {
-                        Alert.alert('Success', 'Course updated!');
                         closeModal();
                         loadCourses();
                     }
                 } else {
                     const response = await courseApi.createCourse(courseData);
                     if (response.data.success) {
-                        Alert.alert('Success', 'Course created! Now you can add modules and lectures.');
                         closeModal();
                         loadCourses();
                     }

@@ -79,7 +79,7 @@ export default function ExploreCourses() {
 
         if (searchQuery) {
             result = result.filter(course =>
-                course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (course.title && course.title.toLowerCase().includes(searchQuery.toLowerCase())) ||
                 (course.category && course.category.toLowerCase().includes(searchQuery.toLowerCase())) ||
                 (course.instructorName && course.instructorName.toLowerCase().includes(searchQuery.toLowerCase()))
             );

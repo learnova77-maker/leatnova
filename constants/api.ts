@@ -28,6 +28,7 @@ export const courseApi = {
     updateCourse: (id: string, data: { title: string }) => api.put(`/courses/update/${id}`, data),
     updateModule: (courseId: string, moduleId: string, data: { title: string }) => api.put(`/courses/module/update/${courseId}/${moduleId}`, data),
     markLectureCompleted: (data: { courseId: string; moduleId: string; lectureId: string }) => api.post('/courses/lecture/mark-completed', data),
+    markStudentLectureCompleted: (data: { studentId: string; courseId: string; lectureId: string }) => api.post('/courses/lecture/student-complete', data),
     addReview: (data: { courseId: string; studentId: string; studentName: string; rating: number; text: string }) => api.post('/courses/reviews/add', data),
     deleteReview: (courseId: string, reviewId: string) => api.delete(`/courses/reviews/${courseId}/${reviewId}`),
 };
@@ -44,6 +45,7 @@ export const userApi = {
     reportProblem: (data: { userId: string, role: string, issue: string, description: string }) => api.post('/users/support/report', data),
     uploadFile: (data: FormData) => api.post('/users/upload', data, { headers: { 'Content-Type': 'multipart/form-data' } }),
     searchByUsername: (username: string) => api.get(`/users/search/${username}`),
+    searchRealtime: (query: string) => api.get(`/users/search-realtime/${query}`),
 };
 
 export const liveSupportApi = {
@@ -113,6 +115,7 @@ export const paymentApi = {
         api.post('/payment/onboard-teacher', data),
     getOnboardStatus: (teacherId: string) => api.get(`/payment/onboard-status/${teacherId}`),
     getTeacherEarnings: (teacherId: string) => api.get(`/payment/teacher-earnings/${teacherId}`),
+    getTeacherCoinEarnings: (teacherId: string) => api.get(`/payment/teacher-coin-earnings/${teacherId}`),
 
     // Admin/Cron
     processPayouts: () => api.post('/payment/process-payouts'),

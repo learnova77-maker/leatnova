@@ -92,9 +92,9 @@ export default function MyCoursesCatalog() {
                                     <Text style={[styles.instructorName, { color: colors.textSecondary }]}>BY {course.instructorName?.toUpperCase() || 'EXPERT'}</Text>
 
                                     <View style={[styles.progressBarBg, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)' }]}>
-                                        <View style={styles.progressBarFill} />
+                                        <View style={[styles.progressBarFill, { width: `${course.progress || 0}%` }]} />
                                     </View>
-                                    <Text style={[styles.progressText, { color: colors.textSecondary }]}>0% RECEPTION</Text>
+                                    <Text style={[styles.progressText, { color: colors.textSecondary }]}>{course.progress || 0}% COMPLETED</Text>
                                 </View>
                             </TouchableOpacity>
                         ))

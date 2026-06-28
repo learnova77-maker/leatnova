@@ -140,7 +140,7 @@ export default function StudentIndex() {
 
             <AppSidebar role="student" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader
-                title="MALTOVERSE"
+                title="MATLOVERSE"
                 toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
                 role="student"
                 showExplore
@@ -166,15 +166,7 @@ export default function StudentIndex() {
                         </Text>
                     </View>
 
-                    <View style={styles.searchRow}>
-                        <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <Ionicons name="search-outline" size={20} color="#00AEEF" />
-                            <Text style={[styles.searchText, { color: colors.textSecondary }]}>Search courses...</Text>
-                        </View>
-                        <TouchableOpacity style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <Ionicons name="options-outline" size={20} color="#00AEEF" />
-                        </TouchableOpacity>
-                    </View>
+
 
                     <TouchableOpacity
                         activeOpacity={0.9}
@@ -210,7 +202,6 @@ export default function StudentIndex() {
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statsRow}>
                         {[
                             { id: '1', title: 'Videos', subtitle: 'Watch & Learn', icon: 'play-outline', color: '#00AEEF', path: '/student/videos' },
-                            { id: '2', title: 'Certificates', subtitle: 'My Awards', icon: 'ribbon-outline', color: '#00AEEF', path: '/student/certificates' },
                             { id: '3', title: 'Social', subtitle: 'Community', icon: 'people-outline', color: '#00AEEF', path: '/student/social' },
                             { id: '4', title: 'Explore', subtitle: 'Browse All', icon: 'compass-outline', color: '#00AEEF', path: '/student/explore' },
                         ].map((item) => (

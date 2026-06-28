@@ -5,7 +5,6 @@ import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -13,7 +12,6 @@ import {
     Alert,
     FlatList,
     KeyboardAvoidingView,
-    Linking,
     Modal,
     Platform,
     Pressable,
@@ -46,10 +44,15 @@ export default function TeacherAssignments() {
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [selectedCourse, setSelectedCourse] = useState<any>(null);
-    const [taskTitle, setTaskTitle] = useState('');
-    const [taskDescription, setTaskDescription] = useState('');
-    const [pickedFile, setPickedFile] = useState<any>(null);
+    const [selectedModule, setSelectedModule] = useState<any>(null);
+
+    // MCQs state
+    const [question, setQuestion] = useState('');
+    const [options, setOptions] = useState<string[]>(['', '', '', '']); // Default 4 options
+    const [correctOptionIndex, setCorrectOptionIndex] = useState<number | null>(null);
+
     const [showCourseDropdown, setShowCourseDropdown] = useState(false);
+    const [showModuleDropdown, setShowModuleDropdown] = useState(false);
     const [editingAssignment, setEditingAssignment] = useState<any>(null);
 
     const [userId, setUserId] = useState('');
@@ -90,18 +93,32 @@ export default function TeacherAssignments() {
         setRefreshing(false);
     }, []);
 
-    const pickFile = async () => {
-        try {
-            const result = await DocumentPicker.getDocumentAsync({
-                type: ['application/pdf', 'image/*', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-                copyToCacheDirectory: true,
-            });
+    const updateOption = (text: string, index: number) => {
+        const newOptions = [...options];
+        newOptions[index] = text;
+        setOptions(newOptions);
+    };
 
-            if (!result.canceled && result.assets && result.assets.length > 0) {
-                setPickedFile(result.assets[0]);
-            }
-        } catch (err) {
-            console.error('Document picker error:', err);
+    const addOption = () => {
+        if (options.length < 6) {
+            setOptions([...options, '']);
+        } else {
+            Alert.alert('Limit Reached', 'Maximum 6 options allowed.');
+        }
+    };
+
+    const removeOption = (index: number) => {
+        if (options.length <= 2) {
+            Alert.alert('Required', 'Minimum 2 options required.');
+            return;
+        }
+        const newOptions = [...options];
+        newOptions.splice(index, 1);
+        setOptions(newOptions);
+        if (correctOptionIndex === index) {
+            setCorrectOptionIndex(null);
+        } else if (correctOptionIndex !== null && correctOptionIndex > index) {
+            setCorrectOptionIndex(correctOptionIndex - 1);
         }
     };
 
@@ -110,8 +127,20 @@ export default function TeacherAssignments() {
             Alert.alert('Required', 'Please select a course.');
             return;
         }
-        if (!taskTitle.trim()) {
-            Alert.alert('Required', 'Please enter a task title.');
+        if (!selectedModule && !editingAssignment) {
+            Alert.alert('Required', 'Please select a module.');
+            return;
+        }
+        if (!question.trim()) {
+            Alert.alert('Required', 'Please enter a question.');
+            return;
+        }
+        if (options.some(opt => !opt.trim())) {
+            Alert.alert('Required', 'Please fill in all options or remove empty ones.');
+            return;
+        }
+        if (correctOptionIndex === null) {
+            Alert.alert('Required', 'Please select the correct option.');
             return;
         }
 
@@ -123,12 +152,11 @@ export default function TeacherAssignments() {
                     assignmentId: editingAssignment.id,
                     teacherId: userId,
                     courseId: editingAssignment.courseId,
-                    title: taskTitle,
-                    description: taskDescription,
-                    fileUrl: pickedFile?.uri || editingAssignment.fileUrl || null,
+                    question: question,
+                    options: options,
+                    correctOptionIndex: correctOptionIndex,
                 });
                 if (res.data.success) {
-                    Alert.alert('Success', 'Assignment updated!');
                     closeModal();
                     loadData();
                 }
@@ -139,13 +167,14 @@ export default function TeacherAssignments() {
                     teacherName: userName,
                     courseId: selectedCourse.id,
                     courseTitle: selectedCourse.title,
-                    title: taskTitle,
-                    description: taskDescription,
-                    fileUrl: pickedFile?.uri || null,
+                    moduleId: selectedModule.id,
+                    moduleTitle: selectedModule.title,
+                    question: question,
+                    options: options,
+                    correctOptionIndex: correctOptionIndex,
                 });
 
                 if (res.data.success) {
-                    Alert.alert('Success', res.data.message);
                     closeModal();
                     loadData();
                 }
@@ -158,7 +187,7 @@ export default function TeacherAssignments() {
     };
 
     const handleDelete = async (assignment: any) => {
-        Alert.alert('Delete Assignment', `Are you sure you want to delete "${assignment.title}"? This will remove it for all students too.`, [
+        Alert.alert('Delete MCQs', `Are you sure you want to delete this MCQ? This will remove it for all students too.`, [
             { text: 'Cancel', style: 'cancel' },
             {
                 text: 'Delete',
@@ -166,10 +195,10 @@ export default function TeacherAssignments() {
                 onPress: async () => {
                     try {
                         await assignmentApi.delete(userId, assignment.id, assignment.courseId);
-                        Alert.alert('Deleted', 'Assignment removed successfully.');
+                        Alert.alert('Deleted', 'MCQs removed successfully.');
                         loadData();
                     } catch (err) {
-                        Alert.alert('Error', 'Failed to delete assignment.');
+                        Alert.alert('Error', 'Failed to delete MCQs.');
                     }
                 },
             },
@@ -178,24 +207,28 @@ export default function TeacherAssignments() {
 
     const openEditModal = (assignment: any) => {
         setEditingAssignment(assignment);
-        setTaskTitle(assignment.title);
-        setTaskDescription(assignment.description);
-        setPickedFile(assignment.fileUrl ? { name: 'Current File', uri: assignment.fileUrl } : null);
+        setQuestion(assignment.question || '');
+        setOptions(assignment.options || ['', '', '', '']);
+        setCorrectOptionIndex(assignment.correctOptionIndex);
+
+        // Find course and module to display logic if we wanted, but editing doesn't allow changing course/module usually
         setIsModalVisible(true);
     };
 
     const closeModal = () => {
         setIsModalVisible(false);
         setEditingAssignment(null);
-        setTaskTitle('');
-        setTaskDescription('');
+        setQuestion('');
+        setOptions(['', '', '', '']);
+        setCorrectOptionIndex(null);
         setSelectedCourse(null);
-        setPickedFile(null);
+        setSelectedModule(null);
         setShowCourseDropdown(false);
+        setShowModuleDropdown(false);
     };
 
     const handleMarkComplete = async (submission: any) => {
-        Alert.alert('Approve Submission', `Mark ${submission.studentName}'s submission as completed?`, [
+        Alert.alert('Approve Answer', `Mark ${submission.studentName}'s answer as completed?`, [
             { text: 'Cancel', style: 'cancel' },
             {
                 text: 'Approve',
@@ -206,10 +239,9 @@ export default function TeacherAssignments() {
                             assignmentId: submission.assignmentId,
                             studentId: submission.studentId,
                         });
-                        Alert.alert('Success', 'Submission approved!');
                         loadData();
                     } catch (err) {
-                        Alert.alert('Error', 'Failed to approve submission.');
+                        Alert.alert('Error', 'Failed to approve answer.');
                     }
                 },
             },
@@ -218,7 +250,7 @@ export default function TeacherAssignments() {
 
     const handleReject = async (submission: any) => {
         Alert.prompt(
-            'Reject Submission',
+            'Reject Answer',
             'Enter feedback for the student (optional):',
             async (feedback) => {
                 try {
@@ -228,42 +260,52 @@ export default function TeacherAssignments() {
                         studentId: submission.studentId,
                         feedback: feedback
                     });
-                    Alert.alert('Rejected', 'Submission has been rejected and sent back.');
+                    Alert.alert('Rejected', 'Answer has been rejected and sent back.');
                     loadData();
                 } catch (err) {
-                    Alert.alert('Error', 'Failed to reject submission.');
+                    Alert.alert('Error', 'Failed to reject answer.');
                 }
             },
             'plain-text'
         );
     };
 
-    const viewSubmission = (url: string) => {
-        if (url) {
-            Linking.openURL(url);
-        } else {
-            Alert.alert('No file', 'No submission file found.');
-        }
-    };
-
     const renderAssignmentItem = ({ item }: any) => (
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.cardTop}>
                 <View style={[styles.iconCircle, { backgroundColor: Colors.primary + '15' }]}>
-                    <Ionicons name="document-text" size={22} color={Colors.primary} />
+                    <Ionicons name="list" size={22} color={Colors.primary} />
                 </View>
                 <View style={{ flex: 1 }}>
-                    <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
-                    <Text style={[styles.cardSub, { color: colors.textSecondary }]}>{item.courseTitle}</Text>
+                    <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={2}>{item.question}</Text>
+                    <Text style={[styles.cardSub, { color: colors.textSecondary }]}>
+                        {item.courseTitle} • {item.moduleTitle}
+                    </Text>
                 </View>
                 <View style={[styles.countBadge, { backgroundColor: Colors.primary + '20' }]}>
                     <Ionicons name="people" size={14} color={Colors.primary} />
                     <Text style={{ color: Colors.primary, fontWeight: 'bold', fontSize: 12 }}>{item.studentCount || 0}</Text>
                 </View>
             </View>
-            {item.description ? (
-                <Text style={[styles.descText, { color: colors.textSecondary }]} numberOfLines={2}>{item.description}</Text>
-            ) : null}
+
+            {item.options && (
+                <View style={{ marginTop: 10, paddingLeft: 10 }}>
+                    {item.options.map((opt: string, idx: number) => (
+                        <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 3 }}>
+                            <Ionicons
+                                name={idx === item.correctOptionIndex ? "checkmark-circle" : "ellipse-outline"}
+                                size={14}
+                                color={idx === item.correctOptionIndex ? "#10B981" : colors.textSecondary}
+                                style={{ marginRight: 6 }}
+                            />
+                            <Text style={{ color: idx === item.correctOptionIndex ? colors.text : colors.textSecondary, fontSize: 13 }}>
+                                {opt}
+                            </Text>
+                        </View>
+                    ))}
+                </View>
+            )}
+
             <View style={styles.cardBottom}>
                 <Text style={[styles.dateText, { color: colors.textSecondary }]}>
                     {new Date(item.createdAt).toLocaleDateString()}
@@ -293,28 +335,19 @@ export default function TeacherAssignments() {
                 <View style={{ flex: 1 }}>
                     <Text style={[styles.cardTitle, { color: colors.text }]}>{item.studentName}</Text>
                     <Text style={[styles.cardSub, { color: colors.textSecondary }]}>{item.assignmentTitle}</Text>
-
-                    <TouchableOpacity
-                        style={styles.viewSubBtn}
-                        onPress={() => viewSubmission(item.submissionUrl)}
-                    >
-                        <Ionicons name="eye-outline" size={14} color={Colors.primary} />
-                        <Text style={[styles.viewSubText, { color: Colors.primary }]}>View Submission</Text>
-                    </TouchableOpacity>
+                    {item.submissionFileName && item.submissionFileName !== 'submission' && (
+                        <Text style={{ color: colors.text, marginTop: 4, fontWeight: 'bold' }}>
+                            Answer: {item.submissionFileName}
+                        </Text>
+                    )}
                 </View>
                 {item.status === 'submitted' && (
                     <View style={{ gap: 8 }}>
-                        <TouchableOpacity
-                            style={styles.completeBtn}
-                            onPress={() => handleMarkComplete(item)}
-                        >
+                        <TouchableOpacity style={styles.completeBtn} onPress={() => handleMarkComplete(item)}>
                             <Ionicons name="checkmark" size={16} color="#FFF" />
                             <Text style={styles.completeBtnText}>Approve</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.completeBtn, { backgroundColor: '#EF4444' }]}
-                            onPress={() => handleReject(item)}
-                        >
+                        <TouchableOpacity style={[styles.completeBtn, { backgroundColor: '#EF4444' }]} onPress={() => handleReject(item)}>
                             <Ionicons name="close" size={16} color="#FFF" />
                             <Text style={styles.completeBtnText}>Reject</Text>
                         </TouchableOpacity>
@@ -325,9 +358,6 @@ export default function TeacherAssignments() {
                 <View>
                     <Text style={[styles.dateText, { color: colors.textSecondary }]}>
                         Submitted: {new Date(item.submittedAt).toLocaleDateString()}
-                    </Text>
-                    <Text style={[styles.fileLabel, { color: colors.textSecondary }]}>
-                        File: {item.submissionFileName || 'submission'}
                     </Text>
                 </View>
                 {item.status === 'completed' && (
@@ -345,6 +375,14 @@ export default function TeacherAssignments() {
             </View>
         </View>
     );
+
+    const getModulesForSelectedCourse = () => {
+        if (!selectedCourse || !selectedCourse.modules) return [];
+        return Object.keys(selectedCourse.modules).map(key => ({
+            id: key,
+            ...selectedCourse.modules[key]
+        }));
+    };
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -377,7 +415,7 @@ export default function TeacherAssignments() {
                         <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 15 }}>
                             <TouchableOpacity style={styles.assignBtn} onPress={() => setIsModalVisible(true)}>
                                 <Ionicons name="add-circle" size={20} color={Colors.secondary} />
-                                <Text style={styles.assignBtnText}>Assign Task</Text>
+                                <Text style={styles.assignBtnText}>Assign MCQs</Text>
                             </TouchableOpacity>
                         </View>
 
@@ -389,8 +427,8 @@ export default function TeacherAssignments() {
                             ListEmptyComponent={
                                 isLoading ? <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 50 }} /> :
                                     <View style={styles.emptyState}>
-                                        <Ionicons name="document-text-outline" size={60} color={colors.textSecondary} style={{ opacity: 0.3 }} />
-                                        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No assignments created yet.</Text>
+                                        <Ionicons name="list-outline" size={60} color={colors.textSecondary} style={{ opacity: 0.3 }} />
+                                        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No MCQs created yet.</Text>
                                     </View>
                             }
                             contentContainerStyle={{ paddingBottom: 100 }}
@@ -415,7 +453,7 @@ export default function TeacherAssignments() {
                             isLoading ? <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 50 }} /> :
                                 <View style={styles.emptyState}>
                                     <Ionicons name="folder-open-outline" size={60} color={colors.textSecondary} style={{ opacity: 0.3 }} />
-                                    <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No submissions received yet.</Text>
+                                    <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No answers received yet.</Text>
                                 </View>
                         }
                         contentContainerStyle={{ paddingBottom: 100 }}
@@ -441,95 +479,135 @@ export default function TeacherAssignments() {
                         style={styles.modalCentered}
                         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
                     >
-                        <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+                        <View style={[styles.modalContent, { backgroundColor: colors.card, paddingVertical: 15 }]}>
                             <View style={styles.modalHeader}>
                                 <Text style={[styles.modalTitle, { color: colors.text }]}>
-                                    {editingAssignment ? 'Edit Assignment' : 'New Assignment'}
+                                    {editingAssignment ? 'Edit MCQs' : 'New MCQs'}
                                 </Text>
                                 <TouchableOpacity onPress={closeModal}>
-                                    <Ionicons name="close" size={22} color={colors.text} />
+                                    <Ionicons name="close" size={24} color={colors.text} />
                                 </TouchableOpacity>
                             </View>
 
                             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 15, paddingBottom: 30 }}>
-                                {/* Course Selector - Hide when editing as course shouldn't change easily */}
+                                {/* Course & Module Selector */}
                                 {!editingAssignment && (
-                                    <View>
-                                        <Text style={[styles.label, { color: colors.text }]}>Select Course</Text>
-                                        <TouchableOpacity
-                                            style={[styles.selector, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                                            onPress={() => setShowCourseDropdown(!showCourseDropdown)}
-                                        >
-                                            <Text style={{ color: selectedCourse ? colors.text : colors.textSecondary, fontSize: 14 }}>
-                                                {selectedCourse ? selectedCourse.title : 'Choose a course...'}
-                                            </Text>
-                                            <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
-                                        </TouchableOpacity>
+                                    <>
+                                        <View style={{ zIndex: 2 }}>
+                                            <Text style={[styles.label, { color: colors.text }]}>Select Course</Text>
+                                            <TouchableOpacity
+                                                style={[styles.selector, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                                                onPress={() => setShowCourseDropdown(!showCourseDropdown)}
+                                            >
+                                                <Text style={{ color: selectedCourse ? colors.text : colors.textSecondary, fontSize: 14 }}>
+                                                    {selectedCourse ? selectedCourse.title : 'Choose a course...'}
+                                                </Text>
+                                                <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
+                                            </TouchableOpacity>
 
-                                        {showCourseDropdown && (
-                                            <View style={[styles.dropdown, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                                                <ScrollView nestedScrollEnabled style={{ maxHeight: 150 }}>
-                                                    {courses.map((c) => (
-                                                        <TouchableOpacity
-                                                            key={c.id}
-                                                            style={styles.dropdownItem}
-                                                            onPress={() => {
-                                                                setSelectedCourse(c);
-                                                                setShowCourseDropdown(false);
-                                                            }}
-                                                        >
-                                                            <Text style={{ color: colors.text, fontSize: 14 }}>{c.title}</Text>
-                                                        </TouchableOpacity>
-                                                    ))}
-                                                </ScrollView>
+                                            {showCourseDropdown && (
+                                                <View style={[styles.dropdown, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                                    <ScrollView nestedScrollEnabled style={{ maxHeight: 150 }}>
+                                                        {courses.map((c) => (
+                                                            <TouchableOpacity
+                                                                key={c.id}
+                                                                style={styles.dropdownItem}
+                                                                onPress={() => {
+                                                                    setSelectedCourse(c);
+                                                                    setSelectedModule(null);
+                                                                    setShowCourseDropdown(false);
+                                                                }}
+                                                            >
+                                                                <Text style={{ color: colors.text, fontSize: 14 }}>{c.title}</Text>
+                                                            </TouchableOpacity>
+                                                        ))}
+                                                    </ScrollView>
+                                                </View>
+                                            )}
+                                        </View>
+
+                                        {selectedCourse && (
+                                            <View style={{ zIndex: 1 }}>
+                                                <Text style={[styles.label, { color: colors.text }]}>Select Module</Text>
+                                                <TouchableOpacity
+                                                    style={[styles.selector, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                                                    onPress={() => setShowModuleDropdown(!showModuleDropdown)}
+                                                >
+                                                    <Text style={{ color: selectedModule ? colors.text : colors.textSecondary, fontSize: 14 }}>
+                                                        {selectedModule ? selectedModule.title : 'Choose a module...'}
+                                                    </Text>
+                                                    <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
+                                                </TouchableOpacity>
+
+                                                {showModuleDropdown && (
+                                                    <View style={[styles.dropdown, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                                        <ScrollView nestedScrollEnabled style={{ maxHeight: 150 }}>
+                                                            {getModulesForSelectedCourse().map((m: any) => (
+                                                                <TouchableOpacity
+                                                                    key={m.id}
+                                                                    style={styles.dropdownItem}
+                                                                    onPress={() => {
+                                                                        setSelectedModule(m);
+                                                                        setShowModuleDropdown(false);
+                                                                    }}
+                                                                >
+                                                                    <Text style={{ color: colors.text, fontSize: 14 }}>{m.title}</Text>
+                                                                </TouchableOpacity>
+                                                            ))}
+                                                        </ScrollView>
+                                                    </View>
+                                                )}
                                             </View>
                                         )}
-                                    </View>
+                                    </>
                                 )}
 
-                                {/* Title */}
-                                <View>
-                                    <Text style={[styles.label, { color: colors.text }]}>Task Title</Text>
-                                    <TextInput
-                                        style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-                                        placeholder="e.g. Chapter 3 Practice Questions"
-                                        placeholderTextColor={colors.textSecondary}
-                                        value={taskTitle}
-                                        onChangeText={setTaskTitle}
-                                    />
-                                </View>
-
-                                {/* Description */}
-                                <View>
-                                    <Text style={[styles.label, { color: colors.text }]}>Brief Description</Text>
+                                {/* Question */}
+                                <View style={{ zIndex: -1 }}>
+                                    <Text style={[styles.label, { color: colors.text }]}>Question</Text>
                                     <TextInput
                                         style={[styles.input, styles.textArea, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-                                        placeholder="Describe what students need to do..."
+                                        placeholder="Type your question here..."
                                         placeholderTextColor={colors.textSecondary}
                                         multiline
-                                        numberOfLines={4}
-                                        value={taskDescription}
-                                        onChangeText={setTaskDescription}
+                                        numberOfLines={3}
+                                        value={question}
+                                        onChangeText={setQuestion}
                                     />
                                 </View>
 
-                                {/* File Picker */}
-                                <View>
-                                    <Text style={[styles.label, { color: colors.text }]}>Attach File (PDF/Doc)</Text>
-                                    <TouchableOpacity
-                                        style={[styles.filePicker, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                                        onPress={pickFile}
-                                    >
-                                        <Ionicons name="attach" size={22} color={Colors.primary} />
-                                        <Text style={{ color: pickedFile ? colors.text : colors.textSecondary, fontSize: 14, flex: 1 }} numberOfLines={1}>
-                                            {pickedFile ? pickedFile.name : 'Tap to attach a file (optional)'}
-                                        </Text>
-                                        {pickedFile && (
-                                            <TouchableOpacity onPress={() => setPickedFile(null)}>
-                                                <Ionicons name="close-circle" size={20} color="#EF4444" />
+                                {/* Options */}
+                                <View style={{ zIndex: -1 }}>
+                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                        <Text style={[styles.label, { color: colors.text, marginBottom: 0 }]}>Options & Correct Answer</Text>
+                                        {(options.length < 6) && (
+                                            <TouchableOpacity onPress={addOption}>
+                                                <Text style={{ color: Colors.primary, fontSize: 13, fontWeight: 'bold' }}>+ Add Option</Text>
                                             </TouchableOpacity>
                                         )}
-                                    </TouchableOpacity>
+                                    </View>
+
+                                    {options.map((opt, idx) => (
+                                        <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 10 }}>
+                                            <TouchableOpacity onPress={() => setCorrectOptionIndex(idx)}>
+                                                <Ionicons
+                                                    name={correctOptionIndex === idx ? "radio-button-on" : "radio-button-off"}
+                                                    size={24}
+                                                    color={correctOptionIndex === idx ? Colors.primary : colors.textSecondary}
+                                                />
+                                            </TouchableOpacity>
+                                            <TextInput
+                                                style={[styles.input, { flex: 1, backgroundColor: colors.surface, borderColor: correctOptionIndex === idx ? Colors.primary : colors.border, color: colors.text }]}
+                                                placeholder={`Option ${idx + 1}`}
+                                                placeholderTextColor={colors.textSecondary}
+                                                value={opt}
+                                                onChangeText={(val) => updateOption(val, idx)}
+                                            />
+                                            <TouchableOpacity onPress={() => removeOption(idx)} style={{ padding: 4 }}>
+                                                <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                                            </TouchableOpacity>
+                                        </View>
+                                    ))}
                                 </View>
 
                                 {/* Submit */}
@@ -542,7 +620,7 @@ export default function TeacherAssignments() {
                                         <ActivityIndicator color={Colors.secondary} />
                                     ) : (
                                         <Text style={styles.submitBtnText}>
-                                            {editingAssignment ? 'Save Changes' : 'Assign to Students'}
+                                            {editingAssignment ? 'Save MCQs' : 'Assign to Students'}
                                         </Text>
                                     )}
                                 </TouchableOpacity>
@@ -595,8 +673,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     cardTitle: { fontSize: 15, fontWeight: 'bold' },
-    cardSub: { fontSize: 12, marginTop: 2 },
-    descText: { fontSize: 13, marginTop: 10, lineHeight: 18 },
+    cardSub: { fontSize: 12, marginTop: 4 },
     dateText: { fontSize: 11, marginTop: 8 },
     countBadge: {
         flexDirection: 'row',
@@ -610,7 +687,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginTop: 5,
+        marginTop: 15,
     },
     actionRow: {
         flexDirection: 'row',
@@ -641,33 +718,18 @@ const styles = StyleSheet.create({
         borderRadius: 12,
     },
     assignBtnText: { color: Colors.secondary, fontWeight: 'bold', fontSize: 14 },
-    viewSubBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        marginTop: 6,
-    },
-    viewSubText: {
-        fontSize: 13,
-        fontWeight: '600',
-        textDecorationLine: 'underline',
-    },
-    fileLabel: {
-        fontSize: 11,
-        marginTop: 2,
-    },
     emptyState: { alignItems: 'center', marginTop: 60, gap: 10 },
     emptyText: { fontSize: 15 },
 
     // Modal
     modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    modalCentered: { width: '88%', maxWidth: 420 },
-    modalContent: { borderRadius: 24, padding: 22, maxHeight: '85%', elevation: 10 },
+    modalCentered: { width: '92%', maxWidth: 450, maxHeight: '90%' },
+    modalContent: { borderRadius: 24, paddingHorizontal: 20, elevation: 10 },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    modalTitle: { fontSize: 18, fontWeight: 'bold' },
-    label: { fontSize: 13, fontWeight: '600', marginBottom: 6, marginLeft: 2 },
+    modalTitle: { fontSize: 19, fontWeight: 'bold' },
+    label: { fontSize: 14, fontWeight: '600', marginBottom: 6, marginLeft: 2 },
     input: { borderRadius: 12, padding: 13, fontSize: 14, borderWidth: 1 },
-    textArea: { height: 100, textAlignVertical: 'top' },
+    textArea: { height: 80, textAlignVertical: 'top' },
     selector: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -680,23 +742,20 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderRadius: 12,
         marginTop: 5,
+        maxHeight: 150,
+        position: 'absolute',
+        top: '100%',
+        left: 0,
+        right: 0,
+        zIndex: 50,
     },
     dropdownItem: { padding: 12, borderBottomWidth: 0.5, borderBottomColor: '#E5E7EB' },
-    filePicker: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-        padding: 13,
-        borderWidth: 1,
-        borderStyle: 'dashed',
-        borderRadius: 12,
-    },
     submitBtn: {
         backgroundColor: Colors.primary,
         padding: 16,
         borderRadius: 14,
         alignItems: 'center',
-        marginTop: 5,
+        marginTop: 10,
     },
     submitBtnText: { color: Colors.secondary, fontWeight: 'bold', fontSize: 16 },
 });

@@ -16,7 +16,6 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { endConnection, fetchProducts, finishTransaction, initConnection, purchaseErrorListener, purchaseUpdatedListener, requestPurchase } from 'react-native-iap';
 
 const { width } = Dimensions.get('window');
 
@@ -53,97 +52,10 @@ export default function WalletScreen() {
 
     useEffect(() => {
         loadUserData();
-
-        // Setup Google Play Connection
-        const setupIAP = async () => {
-            try {
-                await initConnection();
-            } catch (err) {
-                console.log('IAP Init Error:', err);
-            }
-        };
-        setupIAP();
-
-        const purchaseUpdateSubscription = purchaseUpdatedListener(async (purchase: any) => {
-            if (purchase) {
-                try {
-                    // Consume the product so it can be bought again!
-                    await finishTransaction({ purchase, isConsumable: true });
-
-                    // Find which bundle was bought by string matching ID (e.g. coins_500)
-                    const sku = purchase.productId || '';
-                    const addedCoins = parseInt(sku.replace('coins_', '')) || 0;
-
-                    let syncUser = currentUser;
-                    if (!syncUser) {
-                        const saved = await AsyncStorage.getItem('user');
-                        if (saved) syncUser = JSON.parse(saved);
-                    }
-
-                    if (syncUser && addedCoins > 0) {
-                        // Hit backend to add coins to database
-                        const res = await paymentApi.buyCoins({
-                            studentId: syncUser.uid,
-                            coins: addedCoins,
-                            transactionId: purchase.transactionReceipt || purchase.purchaseToken
-                        });
-
-                        if (res.data?.success) {
-                            setBalance(res.data.newBalance);
-                            setIsLoading(false);
-                            Alert.alert(
-                                'Purchase Successful! 🎉',
-                                `${addedCoins} coins have been added successfully.`
-                            );
-                        } else {
-                            throw new Error(res.data?.message || 'Failed to add coins to DB');
-                        }
-                    } else {
-                        setIsLoading(false);
-                        Alert.alert('Session Error', 'User not found. Please relogin to sync wallet.');
-                    }
-                } catch (err: any) {
-                    setIsLoading(false);
-                    Alert.alert('Sync Error', 'Payment succeeded via Google Play, but syncing failed: ' + (err?.message || 'Unknown'));
-                }
-            }
-        });
-
-        const purchaseErrorSubscription = purchaseErrorListener((error) => {
-            setIsLoading(false);
-            if (error.code !== 'E_USER_CANCELLED') {
-                Alert.alert('Payment Cancelled', error.message);
-            }
-        });
-
-        return () => {
-            purchaseUpdateSubscription.remove();
-            purchaseErrorSubscription.remove();
-            endConnection();
-        };
     }, []);
 
     const handleBuyCoins = async (bundle: any) => {
-        setIsLoading(true);
-        try {
-            // First we fetch the product to make sure Google knows it
-            await fetchProducts({ skus: [bundle.id], type: 'in-app' });
-
-            // Then trigger purchase
-            await requestPurchase({
-                request: {
-                    apple: { sku: bundle.id },
-                    google: { skus: [bundle.id] }
-                },
-                type: 'in-app'
-            });
-
-        } catch (err: any) {
-            setIsLoading(false);
-            if (err.code !== 'E_USER_CANCELLED') {
-                Alert.alert('Google Play Error', 'Failed to initialized payment link: ' + err.message);
-            }
-        }
+        // Purchases disabled
     };
 
     return (

@@ -272,7 +272,7 @@ export default function StudentSocial() {
         if (!selectedPost || !currentUser) return;
         try {
             const resp = await socialApi.reportPost({ postId: selectedPost.id, userId: currentUser.uid, userName: currentUser.fullName, reportType, description: reportDesc });
-            if (resp.data.success) { Alert.alert("Success", "Report submitted."); setIsReportModalVisible(false); setReportDesc(''); }
+            if (resp.data.success) { setIsReportModalVisible(false); setReportDesc(''); }
         } catch (e) { Alert.alert("Error", "Failed to report."); }
     };
 
@@ -380,8 +380,6 @@ export default function StudentSocial() {
                     mediaUri: downloadURL,
                     mediaType: 'image'
                 });
-
-                Alert.alert('Success', 'Story uploaded successfully!');
                 loadData();
             }
         } catch (e) { Alert.alert('Error', 'Failed to upload story'); } finally { setIsCreatingStory(false); }
@@ -401,7 +399,6 @@ export default function StudentSocial() {
             });
             setIsTextStoryModalVisible(false);
             setTextStoryContent('');
-            Alert.alert('Success', 'Text story added!');
             loadData();
         } catch (e) { Alert.alert('Error', 'Failed to add story'); } finally { setIsCreatingStory(false); }
     };
@@ -632,7 +629,7 @@ export default function StudentSocial() {
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
             <AppSidebar role="student" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
-            <AppHeader title="Learnova" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} showPost={true} onPostPress={() => setIsModalVisible(true)} onAvatarPress={() => router.push(`/social/profile?userId=${currentUser?.uid}`)} notificationCount={notifications.filter(n => !n.read).length} onNotificationsPress={() => setIsNotifModalVisible(true)} />
+            <AppHeader title="Learnova" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} showPost={true} onPostPress={() => setIsModalVisible(true)} showSearch={true} onAvatarPress={() => router.push(`/social/profile?userId=${currentUser?.uid}`)} notificationCount={notifications.filter(n => !n.read).length} onNotificationsPress={() => setIsNotifModalVisible(true)} />
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
                 {isOffline ? (
                     <NoInternet />

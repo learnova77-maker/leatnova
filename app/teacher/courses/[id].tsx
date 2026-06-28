@@ -3,12 +3,13 @@ import AppSidebar from '@/components/sidebar/AppSidebar';
 import { courseApi } from '@/constants/api';
 import { Colors } from '@/constants/theme';
 import { useTheme } from '@/contexts/ThemeContext';
+import { storage } from '@/lib/firebase';
 import { Ionicons } from '@expo/vector-icons';
-import * as FileSystem from 'expo-file-system/legacy';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { getDownloadURL, ref as storageRef, uploadBytesResumable, uploadBytes } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -228,24 +229,33 @@ export default function TeacherCourses() {
 
         setIsLoading(true);
         try {
+            let finalThumbnail = moduleThumbnail;
+            if (moduleThumbnail && moduleThumbnail.startsWith('file://')) {
+                const response = await fetch(moduleThumbnail);
+                const blob = await response.blob();
+                const fileName = `module_thumb_${Date.now()}.jpg`;
+                const fileRef = storageRef(storage, `modules/${currentCourseId}/${fileName}`);
+                await uploadBytes(fileRef, blob);
+                finalThumbnail = await getDownloadURL(fileRef);
+            }
+
             if (editingModule) {
-                const response = await courseApi.updateModule(currentCourseId, editingModule.id, { title: moduleTitle });
+                const response = await courseApi.updateModule(currentCourseId, editingModule.id, { title: moduleTitle, thumbnail: finalThumbnail });
                 if (response.data.success) {
-                    setModules(modules.map(m => m.id === editingModule.id ? { ...m, title: moduleTitle, thumbnail: moduleThumbnail || undefined } : m));
-                    Alert.alert('Success', 'Module updated successfully!');
+                    setModules(modules.map(m => m.id === editingModule.id ? { ...m, title: moduleTitle, thumbnail: finalThumbnail || undefined } : m));
                 }
             } else {
                 const response = await courseApi.addModule({
                     courseId: currentCourseId,
                     moduleTitle: moduleTitle,
-                    thumbnail: moduleThumbnail // Added thumbnail
+                    thumbnail: finalThumbnail // Added thumbnail
                 });
 
                 if (response.data.success) {
                     const newMod: Module = {
                         id: response.data.moduleId,
                         title: moduleTitle,
-                        thumbnail: moduleThumbnail || undefined,
+                        thumbnail: finalThumbnail || undefined,
                         lectures: [],
                     };
                     setModules([...modules, newMod]);
@@ -335,112 +345,42 @@ export default function TeacherCourses() {
                         finalUri = 'file://' + finalUri;
                     }
 
-                    // Mux Integration
-                    const MUX_TOKEN_ID = process.env.EXPO_PUBLIC_MUX_TOKEN_ID || 'dummy_token_id';
-                    const MUX_TOKEN_SECRET = process.env.EXPO_PUBLIC_MUX_TOKEN_SECRET || 'dummy_token_secret';
-                    const authString = btoa(`${MUX_TOKEN_ID}:${MUX_TOKEN_SECRET}`);
+                    // -- FIREBASE STORAGE UPLOAD OVERRIDE -- //
+                    const response = await fetch(finalUri);
+                    const blob = await response.blob();
 
-                    let uploadUrl = '';
-                    let uploadId = '';
+                    const videoRef = storageRef(storage, `courses/${currentCourseId}/videos/${tempId}.mp4`);
+                    const uploadTask = uploadBytesResumable(videoRef, blob);
 
-                    try {
-                        const muxRes = await fetch('https://api.mux.com/video/v1/uploads', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Basic ${authString}`
+                    finalVideoUrl = await new Promise<string>((resolve, reject) => {
+                        uploadTask.on('state_changed',
+                            (snapshot) => {
+                                const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                                setModules(prev => prev.map(m =>
+                                    m.id === targetModuleId ? {
+                                        ...m,
+                                        lectures: m.lectures.map(l =>
+                                            l.id === tempId ? { ...l, uploadProgress: progress } : l
+                                        )
+                                    } : m
+                                ));
                             },
-                            body: JSON.stringify({
-                                cors_origin: "*",
-                                new_asset_settings: {
-                                    playback_policy: ["public"],
-                                    video_quality: "basic"
-                                }
-                            })
-                        });
-                        const muxData = await muxRes.json();
-                        if (muxData.data && muxData.data.url) {
-                            uploadUrl = muxData.data.url;
-                            uploadId = muxData.data.id;
-                        } else {
-                            throw new Error("Failed to get Mux upload URL");
-                        }
-                    } catch (e) {
-                        throw new Error("Could not initialize Mux upload");
-                    }
-
-                    const uploadTask = FileSystem.createUploadTask(
-                        uploadUrl,
-                        finalUri,
-                        {
-                            httpMethod: 'PUT',
-                            uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-                            headers: { 'Content-Type': 'video/mp4' }
-                        },
-                        (progressEvent) => {
-                            const actualProgress = Math.round((progressEvent.totalBytesSent / progressEvent.totalBytesExpectedToSend) * 100);
-                            const progress = Math.min(actualProgress, 95);
-
-                            setModules(prev => prev.map(m =>
-                                m.id === targetModuleId ? {
-                                    ...m,
-                                    lectures: m.lectures.map(l =>
-                                        l.id === tempId ? { ...l, uploadProgress: progress } : l
-                                    )
-                                } : m
-                            ));
-                        }
-                    );
-
-                    const uploadRes = await uploadTask.uploadAsync();
-                    if (!uploadRes || uploadRes.status < 200 || uploadRes.status >= 300) {
-                        throw new Error(`Mux Upload Error: ${uploadRes?.status} - ${uploadRes?.body}`);
-                    }
-
-                    // Poll Mux for playback ID
-                    let assetId = null;
-                    let playbackId = null;
-                    let attempts = 0;
-
-                    while (!playbackId && attempts < 20) {
-                        setModules(prev => prev.map(m =>
-                            m.id === targetModuleId ? {
-                                ...m,
-                                lectures: m.lectures.map(l =>
-                                    l.id === tempId ? { ...l, uploadProgress: 95 + (Math.min(attempts, 4)) } : l
-                                )
-                            } : m
-                        ));
-
-                        await new Promise(r => setTimeout(r, 2500));
-                        attempts++;
-                        try {
-                            const statusReq = await fetch(`https://api.mux.com/video/v1/uploads/${uploadId}`, {
-                                headers: { Authorization: `Basic ${authString}` }
-                            });
-                            const statusData = await statusReq.json();
-                            if (statusData.data?.asset_id) {
-                                assetId = statusData.data.asset_id;
-
-                                const assetReq = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
-                                    headers: { Authorization: `Basic ${authString}` }
-                                });
-                                const assetData = await assetReq.json();
-                                if (assetData.data?.playback_ids && assetData.data.playback_ids.length > 0) {
-                                    playbackId = assetData.data.playback_ids[0].id;
-                                    if (assetData.data.duration) {
-                                        calculatedDuration = `${Math.floor(assetData.data.duration / 60).toString().padStart(2, '0')}:${Math.floor(assetData.data.duration % 60).toString().padStart(2, '0')}`;
-                                    }
+                            (error) => {
+                                reject(new Error('Firebase Storage Upload Failed: ' + error.message));
+                            },
+                            async () => {
+                                try {
+                                    const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+                                    resolve(downloadUrl);
+                                } catch (e: any) {
+                                    reject(new Error('Failed to get download URL: ' + e.message));
                                 }
                             }
-                        } catch (e) { }
-                    }
+                        );
+                    });
 
-                    if (playbackId) {
-                        finalVideoUrl = `https://stream.mux.com/${playbackId}.m3u8`;
-                    } else {
-                        throw new Error("Mux video processing timed out");
-                    }
+                    // For raw firebase storage videos we use the user-provided duration because we can't reliably read it post-upload on client
+                    calculatedDuration = tempLecture.duration || '00:00';
                 }
 
                 const lectureData = {
@@ -474,7 +414,7 @@ export default function TeacherCourses() {
                 setModules(prev => prev.map(m =>
                     m.id === targetModuleId ? { ...m, lectures: m.lectures.filter(l => l.id !== tempId) } : m
                 ));
-                Alert.alert('Upload Failed', `Could not upload lecture: ${tempLecture.title}`);
+                Alert.alert('Upload Failed', `Could not upload lecture: ${tempLecture.title}. Error details: ${err?.message || JSON.stringify(err)}`);
             }
         };
 

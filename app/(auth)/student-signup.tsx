@@ -120,7 +120,7 @@ export default function StudentSignUp() {
                         <View style={styles.header}>
                             <Text style={styles.welcomeSubSmall}>• STUDENT REGISTRATION</Text>
                             <Text style={[styles.title, { color: '#1A1A1A' }]}>
-                                Join <Text style={{ color: '#00AEEF' }}>MALTOVERSE</Text>
+                                Join <Text style={{ color: '#00AEEF' }}>MATLOVERSE</Text>
                             </Text>
                             <Text style={[styles.subtitle, { color: '#666' }]}>Complete your profile to start learning.</Text>
                         </View>

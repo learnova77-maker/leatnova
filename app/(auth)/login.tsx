@@ -112,7 +112,7 @@ export default function LoginScreen() {
                     <View style={styles.systemFooter}>
                         <Text style={styles.systemText}>
                             <Text style={{ color: '#00AEEF' }}>• </Text>
-                            MALTOVERSE <Text style={{ color: '#00AEEF' }}>• </Text> SECURE ACCESS
+                            MATLOVERSE <Text style={{ color: '#00AEEF' }}>• </Text> SECURE ACCESS
                         </Text>
                     </View>
                 </View>

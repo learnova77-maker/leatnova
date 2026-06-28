@@ -52,6 +52,9 @@ export default function TeacherFinance() {
         payouts: [] as Payout[],
     });
 
+    const [coinEarnings, setCoinEarnings] = useState<any[]>([]);
+    const [dateFilter, setDateFilter] = useState<'all' | '7days' | '30days'>('all');
+
     useEffect(() => {
         const unsubscribe = NetInfo.addEventListener(state => {
             setIsOffline(!state.isConnected);
@@ -77,6 +80,12 @@ export default function TeacherFinance() {
                 const earningsRes = await paymentApi.getTeacherEarnings(parsed.uid);
                 if (earningsRes.data.success) {
                     setEarnings(earningsRes.data.earnings);
+                }
+
+                // Load coin earnings
+                const coinRes = await paymentApi.getTeacherCoinEarnings(parsed.uid);
+                if (coinRes.data.success) {
+                    setCoinEarnings(coinRes.data.earnings);
                 }
             }
         } catch (e) {
@@ -106,6 +115,21 @@ export default function TeacherFinance() {
             </SafeAreaView>
         );
     }
+
+    const getFilteredCoins = () => {
+        const now = Date.now();
+        return coinEarnings.filter(tx => {
+            if (dateFilter === 'all') return true;
+            const diffDays = (now - tx.timestamp) / (1000 * 60 * 60 * 24);
+            if (dateFilter === '7days') return diffDays <= 7;
+            if (dateFilter === '30days') return diffDays <= 30;
+            return true;
+        });
+    };
+
+    const filteredCoins = getFilteredCoins();
+    const totalCoins = filteredCoins.reduce((sum, tx) => sum + (tx.coinsEarned || 0), 0);
+    const totalRS = totalCoins * 1; // 1 Coin = 1 RS
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -142,7 +166,7 @@ export default function TeacherFinance() {
                                     `You have $${earnings.pendingAmount.toFixed(2)} available. Send request to Admin?`,
                                     [
                                         { text: "Cancel" },
-                                        { text: "Send Request", onPress: () => Alert.alert("Success", "Payout request sent to Admin! They will contact you for details.") }
+                                        { text: "Send Request", onPress: () => {} }
                                     ]
                                 );
                             }}
@@ -170,6 +194,65 @@ export default function TeacherFinance() {
                             <Text style={[styles.earningLabel, { color: colors.textSecondary }]}>PENDING</Text>
                         </View>
                     </View>
+
+                    {/* COINS WALLET OVERVIEW */}
+                    <Text style={[styles.pageTitle, { color: colors.text, marginTop: 10, marginBottom: 15 }]}>Coin <Text style={{ color: '#F59E0B' }}>Earnings</Text></Text>
+                    <View style={styles.earningsRow}>
+                        <View style={[styles.earningCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="server-outline" size={24} color="#F59E0B" />
+                            <Text style={[styles.earningAmount, { color: colors.text }]}>{totalCoins}</Text>
+                            <Text style={[styles.earningLabel, { color: colors.textSecondary }]}>COINS EARNED</Text>
+                        </View>
+                        <View style={[styles.earningCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Ionicons name="cash-outline" size={24} color="#10B981" />
+                            <Text style={[styles.earningAmount, { color: colors.text }]}>Rs {totalRS}</Text>
+                            <Text style={[styles.earningLabel, { color: colors.textSecondary }]}>EQUIVALENT (RS)</Text>
+                        </View>
+                    </View>
+
+                    {/* Filter Buttons */}
+                    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 15 }}>
+                        <TouchableOpacity onPress={() => setDateFilter('all')} style={[styles.filterBtn, dateFilter === 'all' && styles.filterBtnActive]}>
+                            <Text style={[styles.filterBtnText, dateFilter === 'all' && styles.filterBtnTextActive]}>ALL TIME</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setDateFilter('7days')} style={[styles.filterBtn, dateFilter === '7days' && styles.filterBtnActive]}>
+                            <Text style={[styles.filterBtnText, dateFilter === '7days' && styles.filterBtnTextActive]}>LAST 7 DAYS</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setDateFilter('30days')} style={[styles.filterBtn, dateFilter === '30days' && styles.filterBtnActive]}>
+                            <Text style={[styles.filterBtnText, dateFilter === '30days' && styles.filterBtnTextActive]}>LAST 30 DAYS</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Coin Transactions */}
+                    {filteredCoins.length > 0 ? (
+                        filteredCoins.map((tx: any) => (
+                            <View key={tx.id} style={[styles.payoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                    <View style={[styles.payoutIcon, { backgroundColor: 'rgba(245, 158, 11, 0.1)' }]}>
+                                        <Ionicons name="server" size={20} color="#F59E0B" />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.payoutCourse, { color: colors.text }]} numberOfLines={1}>{tx.courseTitle.toUpperCase()}</Text>
+                                        <Text style={[styles.payoutStudent, { color: colors.textSecondary }]}>BY {tx.studentName ? tx.studentName.toUpperCase() : 'STUDENT'}</Text>
+                                    </View>
+                                    <View style={{ alignItems: 'flex-end' }}>
+                                        <Text style={[styles.payoutAmount, { color: '#F59E0B' }]}>+{tx.coinsEarned} Coins</Text>
+                                        <Text style={[styles.payoutDate, { color: colors.textSecondary, fontSize: 8, fontWeight: '900' }]}>
+                                            {formatDate(tx.timestamp)}
+                                        </Text>
+                                    </View>
+                                </View>
+                            </View>
+                        ))
+                    ) : (
+                        <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 20 }]}>
+                            <Ionicons name="server-outline" size={50} color={colors.textSecondary} />
+                            <Text style={[styles.emptyTitle, { color: colors.text }]}>NO COIN EARNINGS</Text>
+                            <Text style={[styles.emptyDesc, { color: colors.textSecondary }]}>
+                                Students haven't purchased any courses with coins yet.
+                            </Text>
+                        </View>
+                    )}
 
                     {/* Payout History */}
                     <View style={styles.sectionHeader}>
@@ -251,4 +334,10 @@ const styles = StyleSheet.create({
     emptyState: { borderRadius: 20, borderWidth: 1, padding: 50, alignItems: 'center' },
     emptyTitle: { fontSize: 12, fontWeight: '900', marginTop: 15, letterSpacing: 1 },
     emptyDesc: { fontSize: 9, textAlign: 'center', marginTop: 5, fontWeight: '700', letterSpacing: 0.5 },
+
+    // Filters
+    filterBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: '#333' },
+    filterBtnActive: { backgroundColor: '#00AEEF', borderColor: '#00AEEF' },
+    filterBtnText: { fontSize: 9, fontWeight: '900', color: '#888' },
+    filterBtnTextActive: { color: '#FFF' },
 });

@@ -345,4 +345,38 @@ router.get('/search/:username', async (req, res) => {
     }
 });
 
+// Realtime search (partial match)
+router.get('/search-realtime/:query', async (req, res) => {
+    const { query } = req.params;
+    const lowerQuery = query.toLowerCase();
+    try {
+        const usersRef = ref(rtdb, 'users');
+        const snapshot = await get(usersRef);
+
+        if (!snapshot.exists()) {
+            return res.json({ success: true, users: [] });
+        }
+
+        const matches = [];
+        snapshot.forEach((childSnap) => {
+            const userData = childSnap.val();
+            if (userData.username?.toLowerCase().includes(lowerQuery) || userData.fullName?.toLowerCase().includes(lowerQuery)) {
+                matches.push({
+                    uid: userData.uid,
+                    fullName: userData.fullName,
+                    username: userData.username,
+                    photoUrl: userData.photoUrl,
+                    role: userData.role,
+                    bio: userData.bio
+                });
+            }
+        });
+
+        // Limit to 20 results to avoid massive payloads
+        res.json({ success: true, users: matches.slice(0, 20) });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 module.exports = router;

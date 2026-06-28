@@ -582,6 +582,29 @@ router.get('/teacher-earnings/:teacherId', async (req, res) => {
     }
 });
 
+// GET Teacher Coin Earnings
+router.get('/teacher-coin-earnings/:teacherId', async (req, res) => {
+    const { teacherId } = req.params;
+    try {
+        const dbRef = ref(rtdb);
+        const snapshot = await get(child(dbRef, `teacher_coin_earnings/${teacherId}`));
+        
+        if (!snapshot.exists()) {
+            return res.json({ success: true, earnings: [] });
+        }
+
+        const data = snapshot.val();
+        const earnings = Object.keys(data).map(key => ({
+            id: key,
+            ...data[key]
+        })).sort((a, b) => b.timestamp - a.timestamp);
+
+        res.json({ success: true, earnings });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // ============================================
 // 6. ENROLLMENT & UTILITY ROUTES (existing)
 // ============================================
@@ -789,10 +812,18 @@ router.post('/buy-with-coins', async (req, res) => {
         if (teacherId) {
             await set(ref(rtdb, `teacherStudents/${teacherId}/${studentId}`), {
                 studentId,
-                studentName: studentName || '',
+                enrolledAt: Date.now()
+            });
+
+            // Log Teacher Coin Earnings
+            const teacherEarningsRef = ref(rtdb, `teacher_coin_earnings/${teacherId}`);
+            await push(teacherEarningsRef, {
+                studentId,
+                studentName: studentName || 'Unknown Student',
                 courseId,
-                courseTitle: courseTitle || '',
-                enrolledAt: Date.now(),
+                courseTitle: courseTitle || 'Unknown Course',
+                coinsEarned: cost,
+                timestamp: Date.now()
             });
         }
 

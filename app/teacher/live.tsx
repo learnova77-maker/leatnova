@@ -153,7 +153,6 @@ export default function TeacherLive() {
                 lectureId
             });
             setIsLive(true);
-            Alert.alert('Live Class Started', 'The class is now live.');
         } catch (err: any) {
             Alert.alert('Error', err.message || 'Failed to start live class.');
         } finally {
@@ -258,7 +257,7 @@ export default function TeacherLive() {
             )}
 
             <AppSidebar role="teacher" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
-            <AppHeader title="MALTOVERSE" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
+            <AppHeader title="MATLOVERSE" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
 
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
                 <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>

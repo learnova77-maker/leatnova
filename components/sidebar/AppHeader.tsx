@@ -26,6 +26,7 @@ interface HeaderProps {
     notificationCount?: number;
     onNotificationsPress?: () => void;
     showExplore?: boolean;
+    showSearch?: boolean;
 }
 
 export default function AppHeader({
@@ -41,12 +42,14 @@ export default function AppHeader({
     onAvatarPress,
     notificationCount,
     onNotificationsPress,
-    showExplore
+    showExplore,
+    showSearch
 }: HeaderProps) {
     const router = useRouter();
     const { colors, isDark } = useTheme();
     const [user, setUser] = useState<{ uid: string; fullName?: string; photoUrl?: string } | null>(null);
     const [unreadCount, setUnreadCount] = useState(0);
+    const [coins, setCoins] = useState(0);
 
     useEffect(() => {
         const loadInitialData = async () => {
@@ -62,6 +65,12 @@ export default function AppHeader({
                         if (notifRes.data.success) {
                             const unread = notifRes.data.notifications.filter((n: any) => !n.read).length;
                             setUnreadCount(unread);
+                        }
+
+                        // Fetch coins
+                        const profileRes = await userApi.getProfile(parsedUser.uid);
+                        if (profileRes.data?.success && profileRes.data?.user?.coins) {
+                            setCoins(parseInt(profileRes.data.user.coins) || 0);
                         }
                     }
                 }
@@ -104,10 +113,10 @@ export default function AppHeader({
             )}
 
             <View style={styles.headerBrand}>
-                <Text style={[styles.brandText, { color: colors.text, letterSpacing: 2 }]}>
-                    {(title.toUpperCase() === 'MATLOVERSE' || title.toUpperCase() === 'MALTOVERSE' || title === 'MaltoVerse') ? (
+                <Text style={[styles.brandText, { color: colors.text, letterSpacing: 1 }]}>
+                    {(title.toUpperCase() === 'MATLOVERSE' || title.toUpperCase() === 'MALTOVERSE' || title === 'MatloVerse' || title === 'MaltoVerse') ? (
                         <>
-                            {title.toUpperCase().startsWith('MATLO') ? 'MATLO' : 'MALTO'}<Text style={{ color: '#00AEEF', fontWeight: '900', textShadowColor: '#00AEEF', textShadowRadius: isDark ? 15 : 0 }}>VERSE</Text>
+                            MATLO<Text style={{ color: '#00AEEF', fontWeight: '900', textShadowColor: '#00AEEF', textShadowRadius: isDark ? 15 : 0 }}>VERSE</Text>
                         </>
                     ) : (title === 'Learnova' ? (
                         <>
@@ -126,17 +135,17 @@ export default function AppHeader({
 
                 {role === 'student' && (
                     <TouchableOpacity
-                        style={[styles.actionIcon, { flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, marginRight: 8 }]}
+                        style={[styles.actionIcon, { flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#D1FAE5', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, marginRight: 8 }]}
                         onPress={() => router.push('/student/wallet')}
                     >
-                        <Ionicons name="sparkles" size={16} color="#F59E0B" />
-                        <Text style={{ marginLeft: 4, fontWeight: 'bold', color: '#F59E0B', fontSize: 13 }}>Coins</Text>
+                        <Ionicons name="cash-outline" size={16} color="#10B981" />
+                        <Text style={{ marginLeft: 4, fontWeight: 'bold', color: '#10B981', fontSize: 13 }}>{coins}</Text>
                     </TouchableOpacity>
                 )}
 
-                {showExplore && role === 'student' && (
-                    <TouchableOpacity style={styles.actionIcon} onPress={() => router.push('/student/explore')}>
-                        <Ionicons name="compass-outline" size={26} color="#00AEEF" />
+                {showSearch && (
+                    <TouchableOpacity style={styles.actionIcon} onPress={() => router.push('/social/search')}>
+                        <Ionicons name="search" size={24} color={colors.text} />
                     </TouchableOpacity>
                 )}
 
@@ -197,7 +206,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     brandText: {
-        fontSize: 18,
+        fontSize: 13,
         fontWeight: 'bold',
         textAlign: 'center',
     },

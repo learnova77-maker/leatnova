@@ -136,7 +136,7 @@ export default function ApprovalScreen() {
             setMessages(prev => prev.map(m => m.id === tempId ? { ...m, sending: false } : m));
             if (messages.length <= 1) {
                 setTimeout(async () => {
-                    await approvalApi.sendChatMessage({ userId: user.uid, userName: 'Support Team', text: "Welcome to MALTOVERSE! Our team is reviewing your application. You can ask anything here.", sender: 'support' });
+                    await approvalApi.sendChatMessage({ userId: user.uid, userName: 'Support Team', text: "Welcome to MATLOVERSE! Our team is reviewing your application. You can ask anything here.", sender: 'support' });
                 }, 1000);
             }
         } catch (err) {

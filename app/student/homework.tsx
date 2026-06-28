@@ -1,18 +1,14 @@
 import AppHeader from '@/components/sidebar/AppHeader';
 import AppSidebar from '@/components/sidebar/AppSidebar';
-import { assignmentApi } from '@/constants/api';
+import { assignmentApi, courseApi } from '@/constants/api';
 import { useTheme } from '@/contexts/ThemeContext';
-import { storage } from '@/lib/firebase';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as DocumentPicker from 'expo-document-picker';
-import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
     FlatList,
-    Linking,
     Modal,
     Platform,
     Pressable,
@@ -36,8 +32,8 @@ export default function StudentHomework() {
     const [homeworkLimit, setHomeworkLimit] = useState(10);
 
     const [selectedAssignment, setSelectedAssignment] = useState<any>(null);
-    const [isUploadModalVisible, setIsUploadModalVisible] = useState(false);
-    const [pickedFile, setPickedFile] = useState<any>(null);
+    const [isMCQModalVisible, setIsMCQModalVisible] = useState(false);
+    const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const loadHomework = async () => {
@@ -48,9 +44,34 @@ export default function StudentHomework() {
                 setUserId(user.uid);
                 setUserName(user.fullName);
 
-                const res = await assignmentApi.getStudentAssignments(user.uid);
-                if (res.data.success) {
-                    setAssignments(res.data.assignments);
+                // Fetch both assignments and enrolled courses (which have progress)
+                const [assignRes, enrolledRes] = await Promise.all([
+                    assignmentApi.getStudentAssignments(user.uid),
+                    courseApi.getEnrolledCourses(user.uid)
+                ]);
+
+                if (assignRes.data.success && enrolledRes.data.success) {
+                    const rawAssignments = assignRes.data.assignments;
+                    const enrolledCourses = enrolledRes.data.courses;
+
+                    const filtered = rawAssignments.filter((assign: any) => {
+                        // 1. Find the course
+                        const course = enrolledCourses.find((c: any) => c.id === assign.courseId);
+                        if (!course) return false;
+
+                        // 2. Find the module in the course details
+                        const module = course.modules?.[assign.moduleId];
+                        if (!module || !module.lectures) return true; // Show if structure not found
+
+                        // 3. Check if all lectures in this module are completed in course.lectureProgress
+                        const lectureIds = Object.keys(module.lectures);
+                        const progress = course.lectureProgress || {};
+
+                        const allCompleted = lectureIds.every(lId => progress[lId]?.completed === true);
+                        return allCompleted;
+                    });
+
+                    setAssignments(filtered);
                 }
             }
         } catch (err) {
@@ -68,49 +89,31 @@ export default function StudentHomework() {
         setRefreshing(false);
     }, []);
 
-    const pickFile = async () => {
-        try {
-            const result = await DocumentPicker.getDocumentAsync({
-                type: '*/*',
-                copyToCacheDirectory: true,
-            });
-
-            if (!result.canceled && result.assets && result.assets.length > 0) {
-                setPickedFile(result.assets[0]);
-            }
-        } catch (err) {
-            console.error('Doc picker error:', err);
-        }
-    };
-
     const handleSubmit = async () => {
-        if (!pickedFile) {
-            Alert.alert('Required', 'Please select a file to upload.');
+        if (selectedOptionIndex === null) {
+            Alert.alert('Required', 'Please select an option.');
             return;
         }
 
         setIsSubmitting(true);
         try {
-            const response = await fetch(pickedFile.uri);
-            const blob = await response.blob();
-            const fileName = `${Date.now()}-${pickedFile.name}`;
-            const fileRef = storageRef(storage, `submissions/${userId}/${fileName}`);
-
-            await uploadBytes(fileRef, blob);
-            const downloadUrl = await getDownloadURL(fileRef);
+            // Firebase may convert arrays to objects, so handle both
+            const opts = Array.isArray(selectedAssignment.options)
+                ? selectedAssignment.options
+                : Object.values(selectedAssignment.options || {});
+            const chosenAnswer = String(opts[selectedOptionIndex] || `Option ${selectedOptionIndex + 1}`);
 
             const res = await assignmentApi.submit({
                 studentId: userId,
                 studentName: userName,
                 assignmentId: selectedAssignment.id,
-                submissionUrl: downloadUrl,
-                submissionFileName: pickedFile.name,
+                submissionUrl: selectedOptionIndex.toString(),
+                submissionFileName: chosenAnswer,
             });
 
             if (res.data.success) {
-                Alert.alert('Success', 'Assignment submitted successfully!');
-                setIsUploadModalVisible(false);
-                setPickedFile(null);
+                setIsMCQModalVisible(false);
+                setSelectedOptionIndex(null);
                 setSelectedAssignment(null);
                 loadHomework();
             }
@@ -124,13 +127,13 @@ export default function StudentHomework() {
 
     const getStatusConfig = (item: any) => {
         if (item.status === 'completed') {
-            return { icon: 'checkmark-done-circle', color: '#00AEEF', label: 'COMPLETED', bg: isDark ? 'rgba(0, 174, 239, 0.1)' : 'rgba(0, 174, 239, 0.05)' };
+            return { icon: 'checkmark-done-circle', color: '#00AEEF', label: 'APPROVED', bg: isDark ? 'rgba(0, 174, 239, 0.1)' : 'rgba(0, 174, 239, 0.05)' };
         }
         if (item.status === 'submitted') {
-            return { icon: 'time-outline', color: '#00AEEF', label: 'AWAITING REVIEW', bg: isDark ? 'rgba(0, 174, 239, 0.05)' : 'rgba(0, 174, 239, 0.03)' };
+            return { icon: 'time-outline', color: '#00AEEF', label: 'AWAITING GRADE', bg: isDark ? 'rgba(0, 174, 239, 0.05)' : 'rgba(0, 174, 239, 0.03)' };
         }
         if (item.rejected) {
-            return { icon: 'alert-circle-outline', color: '#FF4444', label: 'NEEDS REVISION', bg: isDark ? 'rgba(255, 68, 68, 0.1)' : 'rgba(255, 68, 68, 0.05)' };
+            return { icon: 'alert-circle-outline', color: '#FF4444', label: 'INCORRECT / REJECTED', bg: isDark ? 'rgba(255, 68, 68, 0.1)' : 'rgba(255, 68, 68, 0.05)' };
         }
         return { icon: 'radio-button-on-outline', color: colors.textSecondary, label: 'PENDING', bg: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)' };
     };
@@ -144,15 +147,15 @@ export default function StudentHomework() {
                         <Ionicons name={st.icon as any} size={22} color={st.color} />
                     </View>
                     <View style={{ flex: 1 }}>
-                        <Text style={[styles.cardTitle, { color: colors.text }]}>{item.title}</Text>
+                        <Text style={[styles.cardTitle, { color: colors.text }]}>{item.moduleTitle || 'MCQs'}</Text>
                         <Text style={[styles.cardSub, { color: colors.textSecondary }]}>
-                            {item.courseTitle.toUpperCase()} • BY {item.teacherName.toUpperCase()}
+                            {item.courseTitle?.toUpperCase()} • BY {item.teacherName?.toUpperCase()}
                         </Text>
                     </View>
                 </View>
 
-                {item.description ? (
-                    <Text style={[styles.descText, { color: colors.textSecondary }]} numberOfLines={3}>{item.description}</Text>
+                {item.question ? (
+                    <Text style={[styles.descText, { color: colors.textSecondary }]} numberOfLines={3}>{item.question}</Text>
                 ) : null}
 
                 <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
@@ -167,27 +170,17 @@ export default function StudentHomework() {
                     </View>
                 )}
 
-                {item.fileUrl && (
-                    <TouchableOpacity
-                        style={styles.downloadRow}
-                        onPress={() => Linking.openURL(item.fileUrl)}
-                    >
-                        <Ionicons name="document-attach-outline" size={16} color="#00AEEF" />
-                        <Text style={styles.downloadText}>STUDY MATERIAL ATTACHED</Text>
-                    </TouchableOpacity>
-                )}
-
                 {item.status === 'pending' && (
                     <TouchableOpacity
                         style={styles.uploadBtn}
                         onPress={() => {
                             setSelectedAssignment(item);
-                            setPickedFile(null);
-                            setIsUploadModalVisible(true);
+                            setSelectedOptionIndex(null);
+                            setIsMCQModalVisible(true);
                         }}
                     >
-                        <Ionicons name="cloud-upload-outline" size={18} color="#000" />
-                        <Text style={styles.uploadBtnText}>UPLOAD YOUR WORK</Text>
+                        <Ionicons name="create-outline" size={18} color="#000" />
+                        <Text style={styles.uploadBtnText}>ATTEMPT MCQS</Text>
                     </TouchableOpacity>
                 )}
 
@@ -204,7 +197,7 @@ export default function StudentHomework() {
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
             <AppSidebar role="student" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
-            <AppHeader title="HOMEWORK TERMINAL" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} role="student" />
+            <AppHeader title="ASSIGNMENTS TERMINAL" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} role="student" />
 
             <View style={styles.screenContent}>
                 <FlatList
@@ -216,8 +209,8 @@ export default function StudentHomework() {
                         isLoading ? <View style={{ marginTop: 100 }}><ActivityIndicator size="large" color="#00AEEF" /></View> :
                             <View style={styles.emptyState}>
                                 <Ionicons name="sparkles-outline" size={60} color={isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.05)"} />
-                                <Text style={[styles.emptyText, { color: colors.text }]}>ALL HOMEWORK COMPLETED</Text>
-                                <Text style={[styles.emptySub, { color: colors.textSecondary }]}>No pending assignments detected in the terminal.</Text>
+                                <Text style={[styles.emptyText, { color: colors.text }]}>ALL CLEAR</Text>
+                                <Text style={[styles.emptySub, { color: colors.textSecondary }]}>No pending MCQs detected in the terminal.</Text>
                             </View>
                     }
                     contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 32 }}
@@ -231,40 +224,49 @@ export default function StudentHomework() {
                 />
             </View>
 
-            <Modal visible={isUploadModalVisible} animationType="fade" transparent>
+            <Modal visible={isMCQModalVisible} animationType="fade" transparent>
                 <View style={styles.modalOverlay}>
-                    <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsUploadModalVisible(false)}>
+                    <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsMCQModalVisible(false)}>
                         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)' }} />
                     </Pressable>
                     <View style={[styles.modalContent, { backgroundColor: isDark ? '#0A0A0A' : '#FFF', borderColor: colors.border }]}>
                         <View style={styles.modalHeader}>
-                            <Text style={[styles.modalTitle, { color: colors.text }]}>DATA UPLOAD</Text>
-                            <TouchableOpacity onPress={() => setIsUploadModalVisible(false)}>
+                            <Text style={[styles.modalTitle, { color: colors.text }]}>ASSIGNMENT MCQs</Text>
+                            <TouchableOpacity onPress={() => setIsMCQModalVisible(false)}>
                                 <Ionicons name="close" size={24} color={colors.text} />
                             </TouchableOpacity>
                         </View>
 
                         {selectedAssignment && (
                             <View style={{ marginBottom: 25 }}>
-                                <Text style={[styles.cardTitle, { color: colors.text }]}>{selectedAssignment.title}</Text>
-                                <Text style={[styles.cardSub, { color: colors.textSecondary }]}>{selectedAssignment.courseTitle}</Text>
+                                <Text style={[styles.cardTitle, { color: colors.text }]}>{selectedAssignment.moduleTitle}</Text>
+                                <Text style={[styles.descText, { color: colors.text, marginTop: 10, fontSize: 16 }]}>{selectedAssignment.question}</Text>
                             </View>
                         )}
 
-                        <TouchableOpacity
-                            style={[styles.filePickerBox, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.01)' : 'rgba(0, 0, 0, 0.01)', borderColor: isDark ? 'rgba(0, 174, 239, 0.3)' : 'rgba(0, 174, 239, 0.2)' }]}
-                            onPress={pickFile}
-                        >
-                            <Ionicons name={pickedFile ? 'document-text-outline' : 'cloud-upload-outline'} size={40} color="#00AEEF" />
-                            <Text style={[styles.pickerHint, { color: colors.textSecondary }]}>
-                                {pickedFile ? pickedFile.name : 'TAP TO SELECT YOUR FILE\n(PDF, IMAGE, DOC)'}
-                            </Text>
-                            {pickedFile && (
-                                <TouchableOpacity onPress={() => setPickedFile(null)} style={{ marginTop: 15 }}>
-                                    <Text style={{ color: '#FF4444', fontSize: 10, fontWeight: '900', letterSpacing: 1 }}>REMOVE</Text>
+                        <View style={{ marginBottom: 30 }}>
+                            {(Array.isArray(selectedAssignment?.options)
+                                ? selectedAssignment.options
+                                : Object.values(selectedAssignment?.options || {})
+                            ).map((opt: string, idx: number) => (
+                                <TouchableOpacity
+                                    key={idx}
+                                    style={[
+                                        styles.optionBtn,
+                                        { borderColor: selectedOptionIndex === idx ? '#00AEEF' : colors.border },
+                                        selectedOptionIndex === idx && { backgroundColor: isDark ? 'rgba(0, 174, 239, 0.1)' : 'rgba(0, 174, 239, 0.05)' }
+                                    ]}
+                                    onPress={() => setSelectedOptionIndex(idx)}
+                                >
+                                    <View style={[styles.radioCircle, { borderColor: selectedOptionIndex === idx ? '#00AEEF' : colors.textSecondary }]}>
+                                        {selectedOptionIndex === idx && <View style={styles.radioInner} />}
+                                    </View>
+                                    <Text style={[styles.optionText, { color: selectedOptionIndex === idx ? '#00AEEF' : colors.text }]}>
+                                        {String(opt)}
+                                    </Text>
                                 </TouchableOpacity>
-                            )}
-                        </TouchableOpacity>
+                            ))}
+                        </View>
 
                         <TouchableOpacity
                             style={[styles.submitBtn, isSubmitting && { opacity: 0.7 }]}
@@ -274,7 +276,7 @@ export default function StudentHomework() {
                             {isSubmitting ? (
                                 <ActivityIndicator color="#000" />
                             ) : (
-                                <Text style={styles.submitBtnText}>SUBMIT HOMEWORK</Text>
+                                <Text style={styles.submitBtnText}>SUBMIT ANSWER</Text>
                             )}
                         </TouchableOpacity>
                     </View>
@@ -340,18 +342,6 @@ const styles = StyleSheet.create({
     statusLabel: {
         fontWeight: '900',
         fontSize: 8,
-        letterSpacing: 1,
-    },
-    downloadRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        marginTop: 20,
-    },
-    downloadText: {
-        color: '#00AEEF',
-        fontSize: 9,
-        fontWeight: '900',
         letterSpacing: 1,
     },
     uploadBtn: {
@@ -432,28 +422,40 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 30,
+        marginBottom: 20,
     },
     modalTitle: {
         fontSize: 14,
         fontWeight: '900',
         letterSpacing: 2,
     },
-    filePickerBox: {
-        borderWidth: 1,
-        borderStyle: 'dashed',
-        borderRadius: 20,
-        paddingVertical: 45,
+    optionBtn: {
+        flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 30,
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 10,
     },
-    pickerHint: {
-        textAlign: 'center',
-        marginTop: 15,
-        fontSize: 10,
-        fontWeight: '900',
-        letterSpacing: 1,
-        lineHeight: 18,
+    radioCircle: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        borderWidth: 2,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 10,
+    },
+    radioInner: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: '#00AEEF',
+    },
+    optionText: {
+        fontSize: 14,
+        flex: 1,
+        fontWeight: '600',
     },
     submitBtn: {
         backgroundColor: '#00AEEF',
@@ -468,3 +470,4 @@ const styles = StyleSheet.create({
         letterSpacing: 1,
     },
 });
+

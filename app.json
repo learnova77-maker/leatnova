@@ -20,9 +20,17 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "versionCode": 7,
+      "versionCode": 17,
       "package": "com.cozycave.Learnova",
       "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "ACCESS_NETWORK_STATE",
+        "INTERNET",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MEDIA_PROJECTION",
+        "WAKE_LOCK",
         "CAMERA",
         "RECORD_AUDIO",
         "MODIFY_AUDIO_SETTINGS",
@@ -69,8 +77,15 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "a7fc589d-e22c-4b18-96db-333661c2c4d1"
+        "projectId": "62512c9b-c092-4c18-b7cc-26a31077e397"
       }
+    },
+    "owner": "maltobverse",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/62512c9b-c092-4c18-b7cc-26a31077e397"
     }
   }
 }

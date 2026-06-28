@@ -50,21 +50,45 @@ export default function SignUpChoice() {
                         {roles.map((role) => (
                             <TouchableOpacity
                                 key={role.id}
-                                activeOpacity={0.8}
-                                style={[styles.choiceCard, { backgroundColor: '#FFFFFF', borderColor: 'rgba(0,174,239,0.1)' }]}
-                                onPress={() => router.push({ pathname: '/google-signup', params: { role: role.id } })}
+                                activeOpacity={role.id === 'school' ? 1 : 0.8}
+                                style={[styles.choiceCard, { backgroundColor: '#FFFFFF', borderColor: 'rgba(0,174,239,0.1)' }, role.id === 'school' && { opacity: 0.6 }]}
+                                onPress={() => {
+                                    if (role.id !== 'school') {
+                                        router.push({ pathname: '/google-signup', params: { role: role.id } });
+                                    }
+                                }}
                             >
+                                {role.id === 'school' && (
+                                    <View style={{ 
+                                        position: 'absolute', 
+                                        top: 16, 
+                                        right: 16, 
+                                        backgroundColor: 'rgba(0, 174, 239, 0.1)', 
+                                        paddingHorizontal: 8, 
+                                        paddingVertical: 4, 
+                                        borderRadius: 10, 
+                                        borderWidth: 1, 
+                                        borderColor: 'rgba(0, 174, 239, 0.4)',
+                                        shadowColor: '#00AEEF',
+                                        shadowOffset: { width: 0, height: 0 },
+                                        shadowOpacity: 0.8,
+                                        shadowRadius: 8,
+                                        elevation: 5
+                                    }}>
+                                        <Text style={{ fontSize: 8, fontWeight: '900', color: '#00AEEF', letterSpacing: 0.5 }}>COMING SOON</Text>
+                                    </View>
+                                )}
                                 <View style={styles.cardHeader}>
-                                    <View style={styles.iconBox}>
-                                        <Ionicons name={role.icon as any} size={24} color="#00AEEF" />
+                                    <View style={[styles.iconBox, role.id === 'school' && { backgroundColor: '#F3F4F6', borderColor: '#E5E7EB' }]}>
+                                        <Ionicons name={role.id === 'school' ? 'lock-closed' : role.icon as any} size={24} color={role.id === 'school' ? '#9CA3AF' : '#00AEEF'} />
                                     </View>
                                     <View style={{ flex: 1 }}>
-                                        <Text style={[styles.choiceTitle, { color: '#1A1A1A' }]}>{role.title}</Text>
-                                        <Text style={styles.roleSub}>{role.sub}</Text>
+                                        <Text style={[styles.choiceTitle, { color: role.id === 'school' ? '#9CA3AF' : '#1A1A1A' }]}>{role.title}</Text>
+                                        <Text style={[styles.roleSub, role.id === 'school' && { color: '#9CA3AF' }]}>{role.sub}</Text>
                                     </View>
-                                    <Ionicons name="chevron-forward" size={20} color="#00AEEF" />
+                                    {role.id !== 'school' && <Ionicons name="chevron-forward" size={20} color="#00AEEF" />}
                                 </View>
-                                <Text style={[styles.choiceDescription, { color: '#666' }]}>{role.desc}</Text>
+                                <Text style={[styles.choiceDescription, { color: role.id === 'school' ? '#9CA3AF' : '#666' }]}>{role.desc}</Text>
                             </TouchableOpacity>
                         ))}
                     </View>

@@ -34,6 +34,7 @@ export default function SettingsScreen() {
     // Form States
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
+    const [username, setUsername] = useState('');
     const [photoUrl, setPhotoUrl] = useState('');
     const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
     const [bankName, setBankName] = useState('');
@@ -52,6 +53,7 @@ export default function SettingsScreen() {
                 setUser(parsed);
                 setFullName(parsed.fullName || '');
                 setEmail(parsed.email || '');
+                setUsername(parsed.username || '');
 
                 // Fetch latest details from API to get bank info
                 const res = await userApi.getProfile(parsed.uid);
@@ -60,6 +62,7 @@ export default function SettingsScreen() {
                     setUser(latest);
                     setFullName(latest.fullName || '');
                     setEmail(latest.email || '');
+                    setUsername(latest.username || '');
                     if (latest.bankDetails) {
                         setBankName(latest.bankDetails.bankName || '');
                         setAccountHolder(latest.bankDetails.accountHolder || '');
@@ -75,14 +78,14 @@ export default function SettingsScreen() {
     };
 
     const handleSaveProfile = async () => {
-        if (!fullName.trim() || !email.trim()) {
-            Alert.alert('Error', 'Name and Email are required.');
+        if (!fullName.trim() || !email.trim() || !username.trim()) {
+            Alert.alert('Error', 'Name, Username, and Email are required.');
             return;
         }
 
         setIsSaving(true);
         try {
-            const updateData: any = { fullName, email, photoUrl };
+            const updateData: any = { fullName, email, username, photoUrl };
             if (user?.role === 'teacher') {
                 updateData.bankDetails = {
                     bankName,
@@ -282,6 +285,18 @@ export default function SettingsScreen() {
                                     onChangeText={setFullName}
                                     placeholder="Enter your name"
                                     placeholderTextColor={colors.textSecondary}
+                                />
+                            </View>
+
+                            <View style={styles.inputGroup}>
+                                <Text style={[styles.inputLabel, { color: colors.text }]}>Username</Text>
+                                <TextInput
+                                    style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+                                    value={username}
+                                    onChangeText={setUsername}
+                                    placeholder="Enter username"
+                                    placeholderTextColor={colors.textSecondary}
+                                    autoCapitalize="none"
                                 />
                             </View>
 

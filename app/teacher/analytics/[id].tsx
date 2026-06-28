@@ -29,6 +29,7 @@ interface AnalyticsData {
     commissionPercent?: number;
     commissionAmount?: number;
     netEarnings?: number;
+    coinsEarned?: number;
 }
 
 export default function CourseAnalytics() {
@@ -124,6 +125,24 @@ export default function CourseAnalytics() {
                             </View>
                             <Text style={[styles.metricValue, { color: colors.text }]}>Rs {totalEarnings}</Text>
                             <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>Total Earning</Text>
+                        </View>
+                    </View>
+
+                    {/* Coin Metrics */}
+                    <View style={[styles.metricsRow, { marginTop: 15 }]}>
+                        <View style={[styles.metricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={[styles.metricIconWrap, { backgroundColor: '#F59E0B20' }]}>
+                                <Ionicons name="server" size={24} color="#F59E0B" />
+                            </View>
+                            <Text style={[styles.metricValue, { color: colors.text }]}>{analytics.coinsEarned || 0}</Text>
+                            <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>Coins Earned</Text>
+                        </View>
+                        <View style={[styles.metricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={[styles.metricIconWrap, { backgroundColor: '#10B98120' }]}>
+                                <Ionicons name="cash" size={24} color="#10B981" />
+                            </View>
+                            <Text style={[styles.metricValue, { color: colors.text }]}>Rs {(analytics.coinsEarned || 0) * 1}</Text>
+                            <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>Equivalent (RS)</Text>
                         </View>
                     </View>
 

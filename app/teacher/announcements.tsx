@@ -92,7 +92,6 @@ export default function TeacherAnnouncements() {
                 });
 
                 if (res.data.success) {
-                    Alert.alert('Success', 'Announcement broadcasted to all enrolled students!');
                     setNewTitle('');
                     setNewText('');
                     setIsModalVisible(false);

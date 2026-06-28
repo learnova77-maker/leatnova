@@ -11,9 +11,9 @@ const {
     remove
 } = require('firebase/database');
 
-// Create Assignment (Teacher)
+// Create Assignment (MCQs - Teacher)
 router.post('/create', async (req, res) => {
-    const { teacherId, teacherName, courseId, courseTitle, title, description, fileUrl } = req.body;
+    const { teacherId, teacherName, courseId, courseTitle, moduleId, moduleTitle, question, options, correctOptionIndex } = req.body;
     try {
         const dbRef = ref(rtdb);
 
@@ -24,9 +24,11 @@ router.post('/create', async (req, res) => {
             teacherName,
             courseId,
             courseTitle,
-            title,
-            description,
-            fileUrl: fileUrl || null,
+            moduleId,
+            moduleTitle,
+            question,
+            options,
+            correctOptionIndex,
             createdAt: Date.now(),
             status: 'active'
         };
@@ -49,21 +51,23 @@ router.post('/create', async (req, res) => {
                         teacherName,
                         courseId,
                         courseTitle,
-                        title,
-                        description,
-                        fileUrl: fileUrl || null,
+                        moduleId,
+                        moduleTitle,
+                        question,
+                        options,
+                        correctOptionIndex,
                         assignedAt: Date.now(),
                         status: 'pending',
-                        submissionUrl: null,
                         submittedAt: null,
-                        completedAt: null
+                        completedAt: null,
+                        selectedOptionIndex: null // for student answer
                     };
                     // 3. Create Notification for the student
                     const notificationRef = push(child(dbRef, `notifications/${studentId}`));
                     updates[`notifications/${studentId}/${notificationRef.key}`] = {
                         id: notificationRef.key,
-                        title: 'New Assignment',
-                        message: `Teacher ${teacherName} assigned a new task: ${title} in ${courseTitle}`,
+                        title: 'New MCQs Assigned',
+                        message: `Teacher ${teacherName} added MCQs for ${moduleTitle} in ${courseTitle}`,
                         type: 'assignment',
                         relatedId: assignmentRef.key,
                         read: false,
@@ -85,7 +89,7 @@ router.post('/create', async (req, res) => {
 
         res.status(201).json({
             success: true,
-            message: `Assignment sent to ${studentCount} students!`,
+            message: `MCQs sent to ${studentCount} students!`,
             assignmentId: assignmentRef.key
         });
     } catch (err) {
@@ -141,17 +145,15 @@ router.get('/student/:studentId', async (req, res) => {
 // Student Submit Assignment
 router.post('/submit', async (req, res) => {
     const { studentId, studentName, assignmentId, submissionUrl, submissionFileName } = req.body;
+
+    if (!studentId || !assignmentId) {
+        return res.status(400).json({ success: false, message: 'studentId and assignmentId are required' });
+    }
+
     try {
-        const updates = {};
-
-        // Update student's assignment status
-        updates[`studentAssignments/${studentId}/${assignmentId}/status`] = 'submitted';
-        updates[`studentAssignments/${studentId}/${assignmentId}/submissionUrl`] = submissionUrl;
-        updates[`studentAssignments/${studentId}/${assignmentId}/submissionFileName`] = submissionFileName || 'submission';
-        updates[`studentAssignments/${studentId}/${assignmentId}/submittedAt`] = Date.now();
-
-        // Create submission record for teacher
         const dbRef = ref(rtdb);
+
+        // Fetch the student's assignment data first
         const studentAssignSnap = await get(child(dbRef, `studentAssignments/${studentId}/${assignmentId}`));
 
         if (!studentAssignSnap.exists()) {
@@ -159,34 +161,47 @@ router.post('/submit', async (req, res) => {
         }
 
         const assignData = studentAssignSnap.val();
+        const assignmentTitle = assignData.moduleTitle || assignData.question || 'MCQs';
 
-        updates[`submissions/${assignData.teacherId}/${assignmentId}/${studentId}`] = {
-            studentId,
-            studentName,
-            assignmentId,
-            assignmentTitle: assignData.title,
-            courseTitle: assignData.courseTitle,
-            submissionUrl,
-            submissionFileName: submissionFileName || 'submission',
-            submittedAt: Date.now(),
-            status: 'submitted'
-        };
+        const updates = {};
 
-        // 3. Create Notification for the teacher
-        const teacherNotifRef = push(child(dbRef, `notifications/${assignData.teacherId}`));
-        updates[`notifications/${assignData.teacherId}/${teacherNotifRef.key}`] = {
-            id: teacherNotifRef.key,
-            title: 'New Submission',
-            message: `Student ${studentName} submitted task: ${assignData.title} in ${assignData.courseTitle}`,
-            type: 'submission',
-            relatedId: assignmentId,
-            read: false,
-            createdAt: Date.now()
-        };
+        // Update student's assignment status
+        updates[`studentAssignments/${studentId}/${assignmentId}/status`] = 'submitted';
+        updates[`studentAssignments/${studentId}/${assignmentId}/submissionUrl`] = submissionUrl || '';
+        updates[`studentAssignments/${studentId}/${assignmentId}/submissionFileName`] = submissionFileName || 'submission';
+        updates[`studentAssignments/${studentId}/${assignmentId}/submittedAt`] = Date.now();
+
+        // Create submission record for teacher
+        if (assignData.teacherId) {
+            updates[`submissions/${assignData.teacherId}/${assignmentId}/${studentId}`] = {
+                studentId,
+                studentName: studentName || 'Student',
+                assignmentId,
+                assignmentTitle,
+                courseTitle: assignData.courseTitle || '',
+                submissionUrl: submissionUrl || '',
+                submissionFileName: submissionFileName || 'submission',
+                submittedAt: Date.now(),
+                status: 'submitted'
+            };
+
+            // Create Notification for the teacher
+            const teacherNotifRef = push(child(dbRef, `notifications/${assignData.teacherId}`));
+            updates[`notifications/${assignData.teacherId}/${teacherNotifRef.key}`] = {
+                id: teacherNotifRef.key,
+                title: 'New Submission',
+                message: `Student ${studentName || 'Student'} submitted MCQs: ${assignmentTitle} in ${assignData.courseTitle || 'Course'}`,
+                type: 'submission',
+                relatedId: assignmentId,
+                read: false,
+                createdAt: Date.now()
+            };
+        }
 
         await update(ref(rtdb), updates);
         res.json({ success: true, message: 'Assignment submitted successfully!' });
     } catch (err) {
+        console.error('Submit assignment error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -265,20 +280,20 @@ router.post('/reject', async (req, res) => {
 
 // Update Assignment (Teacher)
 router.put('/update', async (req, res) => {
-    const { assignmentId, teacherId, title, description, fileUrl, courseId } = req.body;
+    const { assignmentId, teacherId, question, options, correctOptionIndex, courseId } = req.body;
     try {
         const dbRef = ref(rtdb);
         const updates = {};
 
         // 1. Update main assignment record
-        updates[`assignments/${assignmentId}/title`] = title;
-        updates[`assignments/${assignmentId}/description`] = description;
-        if (fileUrl !== undefined) updates[`assignments/${assignmentId}/fileUrl`] = fileUrl;
+        updates[`assignments/${assignmentId}/question`] = question;
+        updates[`assignments/${assignmentId}/options`] = options;
+        updates[`assignments/${assignmentId}/correctOptionIndex`] = correctOptionIndex;
 
         // 2. Update teacher's record
-        updates[`teacherAssignments/${teacherId}/${assignmentId}/title`] = title;
-        updates[`teacherAssignments/${teacherId}/${assignmentId}/description`] = description;
-        if (fileUrl !== undefined) updates[`teacherAssignments/${teacherId}/${assignmentId}/fileUrl`] = fileUrl;
+        updates[`teacherAssignments/${teacherId}/${assignmentId}/question`] = question;
+        updates[`teacherAssignments/${teacherId}/${assignmentId}/options`] = options;
+        updates[`teacherAssignments/${teacherId}/${assignmentId}/correctOptionIndex`] = correctOptionIndex;
 
         // 3. Update for all students in that course
         const enrollmentsSnap = await get(child(dbRef, 'enrollments'));
@@ -286,15 +301,15 @@ router.put('/update', async (req, res) => {
             const allEnrollments = enrollmentsSnap.val();
             for (const studentId in allEnrollments) {
                 if (allEnrollments[studentId][courseId]) {
-                    updates[`studentAssignments/${studentId}/${assignmentId}/title`] = title;
-                    updates[`studentAssignments/${studentId}/${assignmentId}/description`] = description;
-                    if (fileUrl !== undefined) updates[`studentAssignments/${studentId}/${assignmentId}/fileUrl`] = fileUrl;
+                    updates[`studentAssignments/${studentId}/${assignmentId}/question`] = question;
+                    updates[`studentAssignments/${studentId}/${assignmentId}/options`] = options;
+                    updates[`studentAssignments/${studentId}/${assignmentId}/correctOptionIndex`] = correctOptionIndex;
                 }
             }
         }
 
         await update(ref(rtdb), updates);
-        res.json({ success: true, message: 'Assignment updated successfully!' });
+        res.json({ success: true, message: 'MCQs updated successfully!' });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }

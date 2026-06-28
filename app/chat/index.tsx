@@ -7,7 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function ChatInbox() {
     const { colors, isDark } = useTheme();
@@ -110,22 +110,15 @@ export default function ChatInbox() {
             <AppHeader title="CHATS & SEARCH" toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} role="student" />
 
             <View style={[styles.searchContainer, { borderBottomColor: colors.border, backgroundColor: colors.card }]}>
-                <View style={[styles.searchInputRow, { backgroundColor: isDark ? '#1A2744' : '#F0F2F5' }]}>
+                <TouchableOpacity
+                    style={[styles.searchInputRow, { backgroundColor: isDark ? '#1A2744' : '#F0F2F5' }]}
+                    onPress={() => router.push('/social/search')}
+                >
                     <Ionicons name="search" size={20} color={colors.textSecondary} style={{ marginRight: 10 }} />
-                    <TextInput
-                        style={[styles.searchInput, { color: colors.text }]}
-                        placeholder="Search user by exact username..."
-                        placeholderTextColor={colors.textSecondary}
-                        value={searchQuery}
-                        onChangeText={setSearchQuery}
-                        autoCapitalize="none"
-                        onSubmitEditing={handleSearch}
-                        returnKeyType="search"
-                    />
-                    {isSearching ? (
-                        <ActivityIndicator size="small" color="#00AEEF" />
-                    ) : null}
-                </View>
+                    <Text style={{ color: colors.textSecondary, fontSize: 14 }}>
+                        Search for a user...
+                    </Text>
+                </TouchableOpacity>
             </View>
 
             {isLoading ? (

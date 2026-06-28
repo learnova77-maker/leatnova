@@ -26,7 +26,6 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { endConnection, finishTransaction, initConnection, purchaseErrorListener, purchaseUpdatedListener } from 'react-native-iap';
 
 const { width } = Dimensions.get('window');
 
@@ -48,6 +47,7 @@ export default function StudentCourseDetail() {
     const [videoProgressMap, setVideoProgressMap] = useState<Record<string, number>>({});
     const [downloadingVideos, setDownloadingVideos] = useState<Record<string, number>>({});
     const [downloadedIds, setDownloadedIds] = useState<string[]>([]);
+    const [studentProgress, setStudentProgress] = useState<any>({});
     const url = Linking.useURL();
 
     // Keyboard Tracking
@@ -63,7 +63,7 @@ export default function StudentCourseDetail() {
         return () => { showSub.remove(); hideSub.remove(); };
     }, []);
 
-    const videoSourceString = typeof selectedVideo === 'string' ? selectedVideo : (selectedVideo?.videoUrl || selectedVideo?.url || null);
+    const videoSourceString = typeof selectedVideo === 'string' ? selectedVideo : (selectedVideo?.link || selectedVideo?.videoUrl || selectedVideo?.url || null);
 
     const player = useVideoPlayer(videoSourceString, p => {
         if (videoSourceString) {
@@ -98,6 +98,31 @@ export default function StudentCourseDetail() {
 
             // Save progress
             const currentTime = player.currentTime;
+
+            // Auto complete if watched > 90%
+            const duration = player.duration || 0;
+            if (duration > 0 && currentTime > 0) {
+                const percent = (currentTime / duration) * 100;
+                if (percent >= 90) {
+                    const lId = typeof selectedVideo === 'object' ? selectedVideo?.lectureId : null;
+                    if (lId) {
+                        setStudentProgress((prev: any) => {
+                            if (!prev[lId]?.completed) {
+                                if (currentUser && id) {
+                                    courseApi.markStudentLectureCompleted({
+                                        studentId: currentUser.uid,
+                                        courseId: id as string,
+                                        lectureId: lId
+                                    }).catch(console.error);
+                                }
+                                return { ...prev, [lId]: { completed: true, completedAt: Date.now() } };
+                            }
+                            return prev;
+                        });
+                    }
+                }
+            }
+
             if (currentTime && currentTime > 3) {
                 const currentPos = currentTime * 1000;
                 const videoId = typeof selectedVideo === 'string' ? selectedVideo : selectedVideo?.id || videoSourceString;
@@ -114,7 +139,7 @@ export default function StudentCourseDetail() {
         return () => {
             clearInterval(interval);
         };
-    }, [player, selectedVideo]);
+    }, [player, selectedVideo, currentUser, id]);
 
     // Reset loading state when video changes
     useEffect(() => {
@@ -151,86 +176,6 @@ export default function StudentCourseDetail() {
             }
         }
     }, [url]);
-
-    // Google Play IAP Initialization
-    useEffect(() => {
-        const setupIAP = async () => {
-            try {
-                await initConnection();
-            } catch (err) {
-                console.log('IAP Init Error:', err);
-            }
-        };
-        setupIAP();
-
-        const purchaseUpdateSubscription = purchaseUpdatedListener(async (purchase: any) => {
-            if (purchase) {
-                try {
-                    Alert.alert('DEBUG 1', 'Received Native Purchase');
-                    try {
-                        await finishTransaction({ purchase, isConsumable: true });
-                        Alert.alert('DEBUG 2', 'Finish Transaction Passed');
-                    } catch (e: any) {
-                        Alert.alert('DEBUG FAILED', 'finishTransaction error: ' + (e?.message || JSON.stringify(e)));
-                        throw e; // Bubble up
-                    }
-
-                    // Critical: The listener closure might have stale state!
-                    // Always read from AsyncStorage to get the latest currentUser to avoid "null" crashes
-                    let syncUser = currentUser;
-                    if (!syncUser || !syncUser.uid) {
-                        const saved = await AsyncStorage.getItem('user');
-                        if (saved) {
-                            syncUser = JSON.parse(saved);
-                        }
-                    }
-                    if (!syncUser || !syncUser.uid) {
-                        setIsPaymentLoading(false);
-                        Alert.alert('Session Error', 'Please log in again to sync your purchase.');
-                        return;
-                    }
-
-                    Alert.alert('DEBUG 3', 'Calling paymentApi.createCheckout for User: ' + syncUser.uid);
-
-                    // Tell our backend to give access
-                    await paymentApi.createCheckout({
-                        courseId: id as string,
-                        courseTitle: 'Premium Course',
-                        price: '0',
-                        studentId: syncUser.uid,
-                        studentName: syncUser.fullName || '',
-                        teacherId: '',
-                    });
-
-                    Alert.alert('DEBUG 4', 'API Hit Successful!');
-
-                    setIsPaymentLoading(false);
-                    Alert.alert('Success', 'Enrollment successful via Google Play!');
-                    setIsEnrolled(true);
-                    loadUserAndCourse();
-                } catch (ackErr: any) {
-                    Alert.alert('DEBUG CATCH BLOCK', 'Message: ' + (ackErr?.message || 'Unknown'));
-                    console.log('ackErr', ackErr);
-                    setIsPaymentLoading(false);
-                    Alert.alert('Sync Error', 'Payment succeeded but course sync failed. Please click Join Course again to automatically restore.');
-                }
-            }
-        });
-
-        const purchaseErrorSubscription = purchaseErrorListener((error) => {
-            setIsPaymentLoading(false);
-            console.log('purchaseErrorListener', error);
-            if (error.code !== 'E_USER_CANCELLED') {
-                // Don't show confusing errors if it's already owned
-            }
-        });
-
-        return () => {
-            purchaseUpdateSubscription.remove();
-            purchaseErrorSubscription.remove();
-            endConnection();
-        };
-    }, []); // Empty dependency array so listener is not recreated multiple times!
 
     const handlePaymentSuccess = async (sessionId: string) => {
         setIsPaymentLoading(true);
@@ -274,6 +219,7 @@ export default function StudentCourseDetail() {
                 });
                 if (enrollResponse.data.success && enrollResponse.data.enrolled) {
                     setIsEnrolled(true);
+                    setStudentProgress(enrollResponse.data.enrollment?.progress || {});
                 }
             }
         } catch (err) {
@@ -282,6 +228,7 @@ export default function StudentCourseDetail() {
             setIsLoading(false);
         }
     };
+
     const handleSubmitReview = async () => {
         if (!reviewText.trim()) return;
         setIsSubmittingReview(true);
@@ -418,7 +365,6 @@ export default function StudentCourseDetail() {
                                     });
 
                                     if (res.data?.success) {
-                                        Alert.alert('Success', 'Course unlocked successfully!');
                                         setIsEnrolled(true);
                                         loadUserAndCourse();
                                     } else {
@@ -608,7 +554,7 @@ export default function StudentCourseDetail() {
                                                     } else {
                                                         const videoLink = lecture.url || lecture.videoUrl || lecture.video || lecture.link;
                                                         if (videoLink) {
-                                                            setSelectedVideo(videoLink);
+                                                            setSelectedVideo({ link: videoLink, lectureId: lKey, moduleId: module.id });
                                                         } else {
                                                             Alert.alert('NOT AVAILABLE', 'This video is not available right now.');
                                                         }
@@ -628,6 +574,17 @@ export default function StudentCourseDetail() {
                                                         {lecture.type === 'Live' ? 'LIVE CLASS' : (lecture.isRecorded ? 'Recorded Video' : `${lecture.duration || '00:00'}`)}
                                                     </Text>
                                                 </View>
+
+                                                {/* Completion Checkmark */}
+                                                {isEnrolled && (
+                                                    <View style={{ marginRight: 10, padding: 5 }}>
+                                                        <Ionicons
+                                                            name={studentProgress[lKey]?.completed ? "checkmark-circle" : "ellipse-outline"}
+                                                            size={22}
+                                                            color={studentProgress[lKey]?.completed ? "#10B981" : colors.textSecondary}
+                                                        />
+                                                    </View>
+                                                )}
                                                 {(lecture.isRecorded || lecture.videoUrl || lecture.url) && !isLocked && (
                                                     <View style={{ marginRight: 5, padding: 10 }}>
                                                         {downloadedIds.includes(lKey) ? (

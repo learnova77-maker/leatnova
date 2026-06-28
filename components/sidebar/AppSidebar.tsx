@@ -141,6 +141,7 @@ export default function AppSidebar({ role, isSidebarOpen, toggleSidebar }: Sideb
     const studentMenu = [
         { id: 'index', path: '/student', icon: 'grid-outline', label: 'Dashboard' },
         { id: 'my-courses', path: '/student/my-courses', icon: 'library-outline', label: 'My Courses' },
+        { id: 'progress', path: '/student/progress', icon: 'bar-chart-outline', label: 'My Progress' },
         { id: 'homework', path: '/student/homework', icon: 'book-outline', label: 'My Homework' },
         { id: 'downloads', path: '/student/downloads', icon: 'cloud-download-outline', label: 'Offline Videos' },
         { id: 'live', path: '/student/live', icon: 'videocam-outline', label: 'Live Classes' },

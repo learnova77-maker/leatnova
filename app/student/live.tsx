@@ -12,6 +12,7 @@ import {
     Alert,
     FlatList,
     Modal,
+    RefreshControl,
     SafeAreaView,
     StatusBar,
     StyleSheet,
@@ -28,6 +29,13 @@ export default function StudentLive() {
     const [isLoading, setIsLoading] = useState(true);
     const [isLiveRoom, setIsLiveRoom] = useState(false);
     const [userName, setUserName] = useState('Student');
+    const [refreshing, setRefreshing] = useState(false);
+
+    const onRefresh = React.useCallback(async () => {
+        setRefreshing(true);
+        await fetchSessions();
+        setRefreshing(false);
+    }, []);
 
     const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
     const [joinData, setJoinData] = useState<{
@@ -45,7 +53,11 @@ export default function StudentLive() {
                 liveApi.getRecordedSessions(),
             ]);
             if (activeRes.data.success) {
-                setActiveSessions(activeRes.data.sessions);
+                const now = Date.now();
+                const twelveHours = 12 * 60 * 60 * 1000;
+                // Filter out stuck sessions that have an endedAt date or started over 12 hours ago
+                const validActive = activeRes.data.sessions.filter((s: any) => !s.endedAt && (!s.startedAt || (now - s.startedAt) < twelveHours));
+                setActiveSessions(validActive);
             }
             if (recordedRes.data.success) {
                 setRecordedSessions(recordedRes.data.sessions);
@@ -222,6 +234,7 @@ export default function StudentLive() {
                     <FlatList
                         data={[]}
                         renderItem={() => null}
+                        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#00AEEF']} tintColor="#00AEEF" />}
                         ListHeaderComponent={
                             <>
                                 {/* Active Live Sessions */}
@@ -264,13 +277,6 @@ export default function StudentLive() {
                     />
                 )}
 
-                {/* Floating refresh button */}
-                <TouchableOpacity
-                    style={styles.floatingRefresh}
-                    onPress={() => { setIsLoading(true); fetchSessions(); }}
-                >
-                    <Ionicons name="refresh-outline" size={20} color="#FFF" />
-                </TouchableOpacity>
                 {/* Video Player Modal */}
                 <Modal visible={!!selectedVideo} animationType="fade" transparent={true}>
                     <View style={styles.videoModalContainer}>

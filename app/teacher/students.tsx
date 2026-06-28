@@ -83,7 +83,7 @@ export default function TeacherStudents() {
 
             <AppSidebar role="teacher" isSidebarOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
             <AppHeader
-                title="MALTOVERSE"
+                title="MATLOVERSE"
                 toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
                 showLive={true}
                 onLivePress={() => router.push('/teacher/live')}

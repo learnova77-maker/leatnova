@@ -176,6 +176,7 @@ export default function NotificationsScreen() {
                 title="Notifications"
                 toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
                 role={role}
+                notificationCount={unreadCount}
             />
 
             {/* Mark All Read bar */}

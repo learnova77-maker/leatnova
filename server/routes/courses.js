@@ -209,6 +209,20 @@ router.get('/:id/analytics', async (req, res) => {
         const commissionAmount = (totalEarnings * commissionPercent) / 100;
         const netEarnings = totalEarnings - commissionAmount;
 
+        // Fetch coin earnings for this specific course
+        let coinsEarned = 0;
+        if (courseData.instructorId) {
+            const coinSnap = await get(child(dbRef, `teacher_coin_earnings/${courseData.instructorId}`));
+            if (coinSnap.exists()) {
+                const allCoinTx = coinSnap.val();
+                Object.values(allCoinTx).forEach(tx => {
+                    if (tx.courseId === id && tx.coinsEarned) {
+                        coinsEarned += parseInt(tx.coinsEarned);
+                    }
+                });
+            }
+        }
+
         res.json({
             success: true,
             analytics: {
@@ -219,7 +233,8 @@ router.get('/:id/analytics', async (req, res) => {
                 totalEarnings,
                 commissionPercent,
                 commissionAmount,
-                netEarnings
+                netEarnings,
+                coinsEarned // New metric
             }
         });
     } catch (err) {
@@ -376,18 +391,40 @@ router.get('/enrolled/:studentId', async (req, res) => {
 
         const courseIds = Object.keys(enrolledData);
 
+        // Always fetch enrollment data from 'enrollments' node for progress tracking
+        // (progress is saved under enrollments/, not studentCourses/)
+        const enrollmentsSnap = await get(child(dbRef, `enrollments/${studentId}`));
+        const enrollmentsData = enrollmentsSnap.exists() ? enrollmentsSnap.val() : {};
+
         // Fetch full course details for each enrolled course
         const courses = [];
         for (const courseId of courseIds) {
             const courseSnap = await get(child(dbRef, `courses/${courseId}`));
             if (courseSnap.exists()) {
                 const courseInfo = courseSnap.val();
+
+                // Calculate actual progress percentage
+                let totalLectures = 0;
+                if (courseInfo.modules) {
+                    Object.values(courseInfo.modules).forEach((m) => {
+                        if (m.lectures) {
+                            totalLectures += Object.keys(m.lectures).length;
+                        }
+                    });
+                }
+
+                // Always use enrollments node for progress (that's where student-complete saves it)
+                const progressObj = (enrollmentsData[courseId] && enrollmentsData[courseId].progress) || {};
+                const completedCount = Object.values(progressObj).filter(p => p.completed).length;
+                const progressPercent = totalLectures > 0 ? Math.round((completedCount / totalLectures) * 100) : 0;
+
                 courses.push({
                     id: courseId,
                     ...courseInfo,
-                    // Prefer metadata from enrollment if available (like enrolledAt)
-                    enrolledAt: enrolledData[courseId].enrolledAt || courseInfo.createdAt || Date.now(),
-                    isLegacy: !snapshot.exists() // Flag to track source for debugging
+                    enrolledAt: enrolledData[courseId].enrolledAt || enrollmentsData[courseId]?.enrolledAt || courseInfo.createdAt || Date.now(),
+                    progress: progressPercent,
+                    lectureProgress: progressObj,
+                    isLegacy: !snapshot.exists()
                 });
             }
         }
@@ -566,6 +603,22 @@ router.delete('/reviews/:courseId/:reviewId', async (req, res) => {
     try {
         await remove(ref(rtdb, `courses/${courseId}/reviews/${reviewId}`));
         res.json({ success: true, message: 'Review deleted successfully' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Mark lecture as completed by student
+router.post('/lecture/student-complete', async (req, res) => {
+    const { studentId, courseId, lectureId } = req.body;
+    try {
+        const { update } = require('firebase/database');
+        const path = `enrollments/${studentId}/${courseId}/progress/${lectureId}`;
+        await update(ref(rtdb, path), {
+            completed: true,
+            completedAt: Date.now()
+        });
+        res.json({ success: true, message: 'Lecture marked as completed' });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
